@@ -148,6 +148,30 @@ append_row_safely <- function(row_df) {
 
   out <- out[, db_cols, drop = FALSE]
   write.csv(out, DB_PATH, row.names = FALSE, na = "")
+
+  git_commit_and_push(
+    report_id = row_df$report_id[1],
+    doi       = row_df$own_work_doi[1],
+    is_update = length(match_idx) > 0
+  )
+}
+
+git_commit_and_push <- function(report_id, doi, is_update = FALSE) {
+  tryCatch({
+    db_abs    <- normalizePath(DB_PATH, mustWork = FALSE)
+    repo_root <- trimws(system2("git", c("rev-parse", "--show-toplevel"),
+                                stdout = TRUE, stderr = FALSE))
+    if (!length(repo_root) || !nzchar(repo_root)) return(invisible(FALSE))
+
+    rel_path <- sub(paste0(repo_root, .Platform$file.sep), "", db_abs, fixed = TRUE)
+    action   <- if (is_update) "update" else "submission"
+    msg      <- sprintf("%s: %s — cited: %s", action, report_id, doi)
+
+    system2("git", c("-C", repo_root, "add", rel_path),   stdout = FALSE, stderr = FALSE)
+    system2("git", c("-C", repo_root, "commit", "-m", msg), stdout = FALSE, stderr = FALSE)
+    system2("git", c("-C", repo_root, "push"),             stdout = FALSE, stderr = FALSE)
+    invisible(TRUE)
+  }, error = function(e) invisible(FALSE))
 }
 
 erase_database_safely <- function() {
