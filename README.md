@@ -1,4 +1,4 @@
-# CitéGuard
+# CiteGuard
 
 Two R Shiny apps for detecting and reporting miscitations in scientific literature.
 
