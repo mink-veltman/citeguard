@@ -1,5 +1,6 @@
-DB_DIR  <- "../data"
-DB_PATH <- file.path(DB_DIR, "miscitation_reports.csv")
+DB_DIR  <- Sys.getenv("CITEGUARD_DATA_DIR",
+                      unset = normalizePath("../data", mustWork = FALSE))
+DB_PATH   <- file.path(DB_DIR, "miscitation_reports.csv")
 LOCK_PATH <- paste0(DB_PATH, ".lock")
 
 dir.create(DB_DIR, showWarnings = FALSE, recursive = TRUE)
