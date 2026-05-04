@@ -1,3 +1,7 @@
+#' @noRd
+# Normalises heterogeneous author objects returned by metacheck::read() — which
+# can arrive as a data frame, a nested list, or a plain vector — into a
+# semicolon-separated "Given Family; Given Family" string.
 collapse_authors <- function(authors_obj) {
   if (is.null(authors_obj)) return(NA_character_)
   if (length(authors_obj) == 0) return(NA_character_)
@@ -54,7 +58,10 @@ collapse_authors <- function(authors_obj) {
   out
 }
 
-# Safe single-value extractor: tries each accessor in turn, returns first non-empty string
+#' @noRd
+# Waterfall extractor: tries each closure in order and returns the first
+# non-NA, non-empty string. Used to handle the variability of Crossref API
+# response shapes across different record types.
 try_extract <- function(...) {
   fns <- list(...)
   for (f in fns) {
@@ -70,6 +77,9 @@ try_extract <- function(...) {
   NA_character_
 }
 
+#' @noRd
+# Wraps metacheck::doi_clean() + metacheck::crossref_doi() and normalises their
+# output into a flat list with fields: ok, title, authors, year.
 fetch_doi_meta <- function(doi) {
   doi <- metacheck::doi_clean(doi)
   if (!nzchar(doi)) return(list(ok = FALSE, error = "No DOI provided."))
@@ -126,6 +136,7 @@ fetch_doi_meta <- function(doi) {
   })
 }
 
+#' @noRd
 check_url <- function(url, timeout_sec = 20) {
   tryCatch({
     resp <- httr2::request(url) |>
@@ -143,11 +154,15 @@ check_url <- function(url, timeout_sec = 20) {
   })
 }
 
+#' @noRd
 check_grobid_alive <- function(grobid_url) {
   grobid_url <- sub("/+$", "", grobid_url)
   check_url(paste0(grobid_url, "/api/isalive"))
 }
 
+#' @noRd
+# Wraps metacheck::pdf2grobid() with a richer stop() message that includes
+# the GROBID URL and the filename to help diagnose connection issues.
 safe_pdf2grobid <- function(pdf_path, grobid_url) {
   tryCatch({
     metacheck::pdf2grobid(
@@ -168,6 +183,9 @@ safe_pdf2grobid <- function(pdf_path, grobid_url) {
   })
 }
 
+#' @noRd
+# Tries three extraction strategies in order for cross-platform compatibility:
+# archive::archive_extract (preferred), utils::unzip, then system unzip.
 safe_extract_zip <- function(zipfile, exdir) {
   dir.create(exdir, recursive = TRUE, showWarnings = FALSE)
 
@@ -194,6 +212,9 @@ safe_extract_zip <- function(zipfile, exdir) {
   list(ok = FALSE, method = NA_character_)
 }
 
+#' @noRd
+# Shiny fileInput helper only. Converts a fileInput data frame (with $name and
+# $datapath columns) into a normalised tibble of PDF paths, extracting ZIPs as needed.
 collect_uploaded_pdfs <- function(upload_df) {
   if (is.null(upload_df) || nrow(upload_df) == 0) {
     return(list(
@@ -256,7 +277,39 @@ collect_uploaded_pdfs <- function(upload_df) {
   list(pdfs = pdf_tbl, messages = messages)
 }
 
-extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 3L) {
+#' Extract citation contexts from a PDF
+#'
+#' Sends a PDF to a running GROBID instance, parses the resulting TEI XML via
+#' \code{metacheck::read()}, and constructs a tibble of all bibliography
+#' citations found in the paper. Each row is one citation occurrence.
+#' The \code{expanded_text} column contains a window of surrounding sentences
+#' located using \code{metacheck::search_text()}.
+#'
+#' @param pdf_path Character. Absolute path to the local PDF file.
+#' @param pdf_name Character. Display name used as the \code{file} column in
+#'   the returned tibble (typically the original filename).
+#' @param grobid_url Character. Base URL of the GROBID REST service
+#'   (e.g. \code{"http://localhost:8070"}). The service must be reachable.
+#' @param window Integer. Number of sentences before and after the citation
+#'   sentence to include in \code{expanded_text}. Default \code{10L}.
+#'
+#' @return A tibble with one row per citation occurrence. Columns:
+#'   \code{file}, \code{citation} (formatted label), \code{sentence} (the
+#'   sentence containing the citation marker), \code{expanded_text} (sentence
+#'   plus up to \code{window} sentences of surrounding context),
+#'   \code{target_sentence} (exact matched sentence from
+#'   \code{search_text()}), \code{ref_title}, \code{ref_authors},
+#'   \code{ref_author_last_names}, \code{ref_author_key},
+#'   \code{ref_lead_author}, \code{ref_title_key}, \code{ref_year},
+#'   \code{ref_doi}, \code{citation_lead_author_guess},
+#'   \code{citation_year_guess}, \code{section}, \code{div}, \code{p},
+#'   \code{s}, \code{note}. If parsing fails entirely, returns a one-row
+#'   tibble with all citation columns \code{NA} and a diagnostic message in
+#'   \code{note}.
+#'
+#' @seealso \code{\link{annotate_with_db_matches}}, \code{\link{analyze_citations}}
+#' @export
+extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 10L) {
   xml_path  <- safe_pdf2grobid(pdf_path, grobid_url = grobid_url)
   paper     <- metacheck::read(xml_path)
   xrefs_all <- paper$xrefs
@@ -337,8 +390,9 @@ extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 3
       note = NA_character_
     )
 
-  # Build ordered sentence list for context expansion.
-  # search_text() returns sentences in document order; row indices give ±window expansion.
+  # metacheck::search_text() returns all document sentences in order; row index
+  # is used for the ±window expansion. Returns NULL when the paper has no
+  # parseable sentence boundaries, in which case expansion is skipped gracefully.
   sent_list <- tryCatch({
     fs <- metacheck::search_text(paper)
     if (is.null(fs) || nrow(fs) == 0 || !"text" %in% names(fs)) {
@@ -349,8 +403,10 @@ extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 3
     }
   }, error = function(e) NULL)
 
-  # Use xrefs$text (the GROBID <s> element) as a fingerprint to locate the sentence
-  # in search_text() output, then expand by row index.
+  # A 60-char normalised prefix is used as a fingerprint to locate each citation
+  # sentence in the search_text() output, because GROBID's <s> element text and
+  # search_text() text can differ slightly (whitespace/encoding). Falls back to
+  # 30 chars before giving up and returning the raw sentence unchanged.
   find_and_expand <- function(sentence_text, sents, w) {
     st <- trimws(dplyr::coalesce(as.character(sentence_text), ""))
     if (!nzchar(st)) return(list(expanded = NA_character_, target = NA_character_))
@@ -386,6 +442,8 @@ extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 3
     )
   })
 
+  # Assemble a human-readable citation label. Author and year are appended only
+  # if they are not already present in the raw in-text marker to avoid duplication.
   expanded_out |>
     dplyr::mutate(
       citation = {
@@ -401,6 +459,38 @@ extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 3
     )
 }
 
+#' Annotate citation contexts with known-miscitation database matches
+#'
+#' For each row in \code{citation_df} (output of
+#' \code{\link{extract_citation_contexts}}), fuzzy-matches against
+#' \code{known_df} (a summarised database of previously reported miscitations)
+#' and appends match metadata columns. Matching uses a composite score across
+#' author key equality, fuzzy author overlap, lead-author edit distance, year
+#' proximity, and title token overlap.
+#'
+#' @param citation_df A tibble as returned by
+#'   \code{\link{extract_citation_contexts}}.
+#' @param known_df A tibble of known miscitations, e.g. as returned by
+#'   \code{summarise_known_miscitations()}. Required columns:
+#'   \code{target_author_key}, \code{target_lead_author},
+#'   \code{target_author_last_names}, \code{target_publication_year},
+#'   \code{target_title_key}, \code{report_count}, \code{report_ids},
+#'   \code{mistake_codes}, \code{mistake_titles}, \code{why_incorrect},
+#'   \code{quoted_or_paraphrased_text}. Pass \code{NULL} or a zero-row tibble
+#'   to get the annotation columns with all-default values (no matches).
+#'
+#' @return The input tibble with additional columns:
+#'   \code{db_known_miscited_paper} (\code{"Yes"}/\code{"No"}),
+#'   \code{db_match_score} (integer composite score),
+#'   \code{db_match_reason} (pipe-separated list of match signals),
+#'   \code{db_report_count}, \code{db_report_ids},
+#'   \code{db_target_author_last_names}, \code{db_mistake_codes},
+#'   \code{db_mistake_titles}, \code{db_why_incorrect},
+#'   \code{db_quoted_text}, \code{future_verdict}. Rows are sorted with
+#'   \code{"Yes"} matches first, then by descending score and report count.
+#'
+#' @seealso \code{\link{extract_citation_contexts}}, \code{\link{analyze_citations}}
+#' @export
 annotate_with_db_matches <- function(citation_df, known_df) {
   if (is.null(citation_df) || nrow(citation_df) == 0) return(citation_df)
 
@@ -426,6 +516,14 @@ annotate_with_db_matches <- function(citation_df, known_df) {
     ref_names <- unlist(strsplit(row$ref_author_last_names %||% "", ";\\s*"))
     ref_names <- ref_names[nzchar(ref_names)]
 
+    # Composite score per candidate database entry:
+    #   Exact author-key match : +6  (strongest single signal)
+    #   Fuzzy author overlap   : +2 per matched name (up to 3)
+    #   Lead-author match      : +2
+    #   In-text lead-author    : +1 (heuristic extraction, so weighted lower)
+    #   Year exact             : +2 / year off-by-one: +1
+    #   Title token overlap    : +2 for ≥2 tokens, +1 for 1 token
+    # Threshold: score ≥ 5 triggers a "Yes" flag.
     candidates <- known_df |>
       dplyr::rowwise() |>
       dplyr::mutate(
@@ -467,6 +565,9 @@ annotate_with_db_matches <- function(citation_df, known_df) {
 
     out_rows[[i]] <- row |>
       dplyr::mutate(
+        # The extra title guard prevents flagging strong author+year matches when
+        # both title keys are non-NA and share zero tokens, i.e. when the title
+        # actively contradicts the database entry.
         db_known_miscited_paper = ifelse(
           score >= 5 & (is.na(best$target_title_key) | best$title_overlap >= 1),
           "Yes", "No"

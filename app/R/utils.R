@@ -1,5 +1,7 @@
+#' @noRd
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
+#' @noRd
 normalize_text_ascii <- function(x) {
   x <- as.character(x)
   x[is.na(x)] <- ""
@@ -9,6 +11,7 @@ normalize_text_ascii <- function(x) {
   x
 }
 
+#' @noRd
 normalize_last_name <- function(x) {
   if (is.null(x)) return(character(0))
   x <- normalize_text_ascii(x)
@@ -18,6 +21,9 @@ normalize_last_name <- function(x) {
   x
 }
 
+#' @noRd
+# max_n = 5: matches the first 5 authors only, keeping the key stable across
+# citation styles (e.g. "et al.") without penalising long author lists.
 make_author_key <- function(last_names, max_n = 5) {
   if (is.null(last_names) || length(last_names) == 0) return(NA_character_)
   last_names <- normalize_last_name(last_names)
@@ -27,6 +33,9 @@ make_author_key <- function(last_names, max_n = 5) {
   paste(last_names[seq_len(min(length(last_names), max_n))], collapse = "|")
 }
 
+#' @noRd
+# The stop-word list is domain-specific: these tokens appear so frequently in
+# psychology and methodology paper titles that they would produce spurious matches.
 normalize_title_tokens <- function(x, max_tokens = 6) {
   if (is.null(x) || length(x) == 0) return(character(0))
   x <- normalize_text_ascii(x)
@@ -49,22 +58,26 @@ normalize_title_tokens <- function(x, max_tokens = 6) {
   toks[seq_len(min(length(toks), max_tokens))]
 }
 
+#' @noRd
 make_title_key <- function(x, max_tokens = 6) {
   toks <- normalize_title_tokens(x, max_tokens = max_tokens)
   if (length(toks) == 0) return(NA_character_)
   paste(toks, collapse = "|")
 }
 
+#' @noRd
 extract_year_guess_one <- function(x) {
   if (length(x) != 1 || is.null(x) || is.na(x) || !nzchar(trimws(x))) return(NA_character_)
   m <- stringr::str_extract(as.character(x), "\\b(19|20)\\d{2}[a-z]?\\b")
   ifelse(is.na(m), NA_character_, m)
 }
 
+#' @noRd
 extract_year_guess_vec <- function(x) {
   purrr::map_chr(as.character(x), extract_year_guess_one)
 }
 
+#' @noRd
 extract_lead_author_from_citation_one <- function(citation_text) {
   if (length(citation_text) != 1 || is.null(citation_text) || is.na(citation_text) || !nzchar(trimws(citation_text))) {
     return(NA_character_)
@@ -85,10 +98,12 @@ extract_lead_author_from_citation_one <- function(citation_text) {
   if (length(out) == 0) NA_character_ else out
 }
 
+#' @noRd
 extract_lead_author_from_citation_vec <- function(x) {
   purrr::map_chr(as.character(x), extract_lead_author_from_citation_one)
 }
 
+#' @noRd
 extract_last_names_from_ref_authors <- function(ref_authors, max_n = 5) {
   if (is.null(ref_authors) || is.na(ref_authors) || !nzchar(trimws(ref_authors))) {
     return(character(0))
@@ -116,6 +131,7 @@ extract_last_names_from_ref_authors <- function(ref_authors, max_n = 5) {
   out[seq_len(min(length(out), max_n))]
 }
 
+#' @noRd
 count_title_overlap <- function(a, b) {
   if (is.na(a) || is.na(b) || !nzchar(a) || !nzchar(b)) return(0L)
   ta <- unique(unlist(strsplit(a, "\\|")))
@@ -123,6 +139,9 @@ count_title_overlap <- function(a, b) {
   length(intersect(ta, tb))
 }
 
+#' @noRd
+# d <= 2 applies only to names of 8+ characters to accommodate common
+# transliteration variants (e.g. Dijksterhuis) without over-matching short names.
 author_name_distance_ok <- function(a, b) {
   if (is.na(a) || is.na(b) || !nzchar(a) || !nzchar(b)) return(FALSE)
 
@@ -136,6 +155,9 @@ author_name_distance_ok <- function(a, b) {
   if (max(nchar(a), nchar(b)) >= 8) d <= 2 else d <= 1
 }
 
+#' @noRd
+# max_compare = 3 mirrors "et al." citation conventions: only the first three
+# authors from each side are compared, avoiding penalisation of long author lists.
 fuzzy_author_overlap <- function(ref_names, target_names, max_compare = 3) {
   ref_names <- normalize_last_name(ref_names)
   target_names <- normalize_last_name(target_names)
@@ -164,6 +186,9 @@ fuzzy_author_overlap <- function(ref_names, target_names, max_compare = 3) {
   matched
 }
 
+#' @noRd
+# Returns 2 for exact year match, 1 for off-by-one. A year-off match alone
+# (score = 1) should not trigger a flag; it only contributes to the composite score.
 year_close_score <- function(ref_year, target_year) {
   if (is.na(ref_year) || is.na(target_year) || !nzchar(ref_year) || !nzchar(target_year)) return(0L)
 
