@@ -2,7 +2,7 @@
 for (f in list.files("app/R", pattern = "\\.R$", full.names = TRUE)) source(f)
 
 # Configuration — set your folder and GROBID URL here
-GROBID_URL   <- "http://localhost:8070"
+GROBID_URL   <- "https://kermitt2-grobid.hf.space"  # or your own instance
 PDF_FOLDER   <- "~/Desktop/mailhos"
 GROQ_API_KEY <- Sys.getenv("GROQ_API_KEY")  # set in .Renviron or paste key directly
 

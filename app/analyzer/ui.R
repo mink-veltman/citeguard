@@ -19,7 +19,8 @@ ui <- fluidPage(
       width = 3,
       wellPanel(
         fileInput("files", "Upload PDF(s) or ZIP file(s)", multiple = TRUE, accept = c(".pdf", ".zip")),
-        textInput("grobid_url", "GROBID URL", value = "http://localhost:8070"),
+        textInput("grobid_url", "GROBID URL", value = "https://kermitt2-grobid.hf.space"),
+helpText(class = "small-note", "Public GROBID instance (shared, may be slow). Replace with your own for better performance."),
 
         hr(),
 
@@ -50,7 +51,7 @@ ui <- fluidPage(
             "llama-3.3-70b-versatile (more capable)"= "llama-3.3-70b-versatile",
             "llama-4-scout-17b (balanced)"          = "meta-llama/llama-4-scout-17b-16e-instruct"
           ),
-          selected = "llama-3.1-8b-instant"
+          selected = "llama-3.3-70b-versatile"
         ),
         actionButton("run_llm",  "Run LLM check", class = "btn-warning"),
         shinyjs::hidden(actionButton("stop_llm", "Stop & keep results", class = "btn-danger")),

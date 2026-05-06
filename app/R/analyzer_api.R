@@ -39,7 +39,7 @@ load_github_known_df <- function() {
 #'
 #' @param pdf_path Character. Absolute path to the local PDF file.
 #' @param grobid_url Character. Base URL of a running GROBID instance.
-#'   Default \code{"http://localhost:8070"}.
+#'   Default \code{"https://kermitt2-grobid.hf.space"} (public shared instance).
 #' @param pdf_name Character. Display name used as the \code{file} column in
 #'   the returned tibble. Defaults to \code{basename(pdf_path)}.
 #' @param known_df A tibble of known miscitations as returned by
@@ -85,7 +85,7 @@ load_github_known_df <- function() {
 #' # With LLM verification on flagged rows
 #' ctx <- analyze_citations(
 #'   pdf_path    = "/path/to/paper.pdf",
-#'   grobid_url  = "http://localhost:8070",
+#'   grobid_url  = "https://kermitt2-grobid.hf.space",
 #'   run_llm     = TRUE,
 #'   llm_api_key = Sys.getenv("GROQ_API_KEY")
 #' )
@@ -101,7 +101,7 @@ load_github_known_df <- function() {
 #' @export
 analyze_citations <- function(
   pdf_path,
-  grobid_url  = "http://localhost:8070",
+  grobid_url  = "https://kermitt2-grobid.hf.space",
   pdf_name    = basename(pdf_path),
   known_df    = load_github_known_df(),
   run_llm     = FALSE,

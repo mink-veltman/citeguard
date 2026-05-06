@@ -39,7 +39,7 @@ Extracts citations from PDF papers and checks them against the miscitation datab
 ## Requirements
 
 - R with the following packages: `shiny`, `shinyjs`, `dplyr`, `purrr`, `stringr`, `DT`, `tibble`, `httr2`, `metacheck`, `digest`, `htmltools`
-- Analyzer only: a running GROBID instance (default: `http://localhost:8070`) and optionally a Groq API key for LLM checks
+- Analyzer only: a GROBID instance (defaults to the public instance at `https://kermitt2-grobid.hf.space`) and optionally a Groq API key for LLM checks
 
 ## Running
 
@@ -81,7 +81,7 @@ docker run --rm --gpus all --init --ulimit core=0 -p 8070:8070 grobid/grobid:0.9
 for (f in list.files("app/R", pattern = "\\.R$", full.names = TRUE)) source(f)
 
 # Configuration — set your folder and GROBID URL here
-GROBID_URL   <- "http://localhost:8070"
+GROBID_URL   <- "https://kermitt2-grobid.hf.space"  # or your own instance
 PDF_FOLDER   <- "/path/to/pdf/folder"
 GROQ_API_KEY <- Sys.getenv("GROQ_API_KEY")  # set in .Renviron or paste key directly
 
