@@ -74,50 +74,52 @@ docker run --rm --init --ulimit core=0 -p 8070:8070 grobid/grobid:0.9.0-crf
 docker run --rm --gpus all --init --ulimit core=0 -p 8070:8070 grobid/grobid:0.9.0-full
 ```
 
-### Analyzing a single PDF
+### Example
 
 ```r
-ctx <- analyze_citations(
-  pdf_path   = "/path/to/paper.pdf",
-  grobid_url = "http://localhost:8070"
-)
+# Load all CiteGuard modules (run from the project root)
+for (f in list.files("app/R", pattern = "\\.R$", full.names = TRUE)) source(f)
 
-# See rows matched against the miscitation database
-ctx[ctx$db_known_miscited_paper == "Yes",
-    c("citation", "db_mistake_titles", "db_why_incorrect")]
-```
+# Configuration — set your folder and GROBID URL here
+GROBID_URL   <- "http://localhost:8070"
+PDF_FOLDER   <- "/path/to/pdf/folder"
+GROQ_API_KEY <- Sys.getenv("GROQ_API_KEY")  # set in .Renviron or paste key directly
 
-### Batch processing
-
-Fetch the database once to avoid a network request per PDF:
-
-```r
+# Load the latest community miscitation database from GitHub
 kdf <- load_github_known_df()
 
-pdf_paths <- list.files("/path/to/papers", pattern = "\\.pdf$", full.names = TRUE)
+# Find all PDFs in the folder
+pdf_paths <- list.files(PDF_FOLDER, pattern = "\\.pdf$",
+                        full.names = TRUE, ignore.case = TRUE, recursive = TRUE)
 
+# Run the full pipeline: extract citations, check against database, verify with LLM
 results <- dplyr::bind_rows(lapply(pdf_paths, analyze_citations,
-  grobid_url = "http://localhost:8070",
-  known_df   = kdf
+  grobid_url  = GROBID_URL,
+  known_df    = kdf,
+  run_llm     = TRUE,
+  llm_api_key = GROQ_API_KEY
 ))
 
-write.csv(results, "citation_check_results.csv", row.names = FALSE)
+# Keep only citations matched against a known miscitation in the database
+flagged <- results[results$db_known_miscited_paper == "Yes", ]
+
+# Print each flagged citation to the console
+for (i in seq_len(nrow(flagged))) {
+  row <- flagged[i, ]
+  cat("────────────────────────────────────────\n")
+  cat("File:       ", row$file, "\n")
+  cat("Citation:   ", row$citation, "\n")
+  cat("Mistake:    ", row$db_mistake_titles, "\n")
+  cat("LLM verdict:", row$llm_verdict, "\n")
+}
+cat("────────────────────────────────────────\n")
+cat(nrow(flagged), "flagged citation(s) across", dplyr::n_distinct(flagged$file), "PDF(s)\n")
+
+# Save flagged results to CSV
+write.csv(flagged, "citeguard_results.csv", row.names = FALSE)
 ```
 
-### With LLM verification
-
-Rows flagged by the database can be passed to an LLM for a second-opinion verdict. Requires a free [Groq](https://groq.com) API key:
-
-```r
-ctx <- analyze_citations(
-  pdf_path    = "/path/to/paper.pdf",
-  grobid_url  = "http://localhost:8070",
-  run_llm     = TRUE,
-  llm_api_key = Sys.getenv("GROQ_API_KEY")   # or paste key directly
-)
-
-ctx[ctx$db_known_miscited_paper == "Yes", c("citation", "llm_verdict")]
-```
+The LLM check requires a free [Groq](https://groq.com) API key. Set `GROQ_API_KEY` in your `.Renviron` file, or omit `run_llm` and `llm_api_key` to skip it.
 
 ### Key function reference
 
