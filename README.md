@@ -67,10 +67,10 @@ for (f in list.files("app/R", pattern = "\\.R$", full.names = TRUE)) source(f)
 You also need a running [GROBID](https://github.com/kermitt2/grobid) instance. The quickest way is via Docker. Two image variants are available:
 
 ```bash
-# CRF-only (lighter, CPU, recommended for most use cases)
+# CRF-only — lighter, CPU only, sufficient for reference extraction
 docker run --rm --init --ulimit core=0 -p 8070:8070 grobid/grobid:0.9.0-crf
 
-# Full (deep learning models, requires GPU)
+# Full — deep learning models, requires GPU
 docker run --rm --gpus all --init --ulimit core=0 -p 8070:8070 grobid/grobid:0.9.0-full
 ```
 
