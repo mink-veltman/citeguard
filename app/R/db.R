@@ -183,7 +183,7 @@ push_db_to_github <- function(df, commit_msg) {
     tmp <- tempfile(fileext = ".csv")
     on.exit(unlink(tmp), add = TRUE)
     write.csv(df, tmp, row.names = FALSE, na = "")
-    encoded <- base64encode(readBin(tmp, "raw", file.info(tmp)$size))
+    encoded <- base64enc::base64encode(readBin(tmp, "raw", file.info(tmp)$size))
 
     body <- list(message = commit_msg, content = encoded, branch = GH_BRANCH)
     if (!is.null(sha)) body$sha <- sha
@@ -237,6 +237,7 @@ summarise_known_miscitations <- function(db) {
       target_publication_year = character(),
       target_title_key = character(),
       target_author_last_names = character(),
+      citing_work_doi = character(),
       report_count = integer(),
       mistake_codes = character(),
       mistake_titles = character()
@@ -270,6 +271,7 @@ summarise_known_miscitations <- function(db) {
     ) |>
     dplyr::summarise(
       target_author_last_names = dplyr::first(target_author_last_names),
+      citing_work_doi = paste(unique(na.omit(citing_work_doi)), collapse = "; "),
       report_count = dplyr::n(),
       report_ids = paste(unique(na.omit(report_id)), collapse = "; "),
       mistake_codes = paste(unique(na.omit(unlist(strsplit(paste(mistake_codes, collapse = "; "), ";\\s*")))), collapse = "; "),
