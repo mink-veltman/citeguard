@@ -16,9 +16,6 @@ server <- function(input, output, session) {
   orcid_meta    <- reactiveVal(NULL)
   orcid_search_results <- reactiveVal(list())
 
-  output$mistake_table_out <- renderTable(mistake_table,
-    striped = TRUE, bordered = TRUE, spacing = "s", width = "100%")
-
   # ORCID lookup — uses metacheck::check_orcid() for validation,
   # metacheck::get_orcid() for name search, metacheck::orcid_person() for details
   observeEvent(input$lookup_orcid, {
@@ -198,9 +195,6 @@ server <- function(input, output, session) {
     lead_author          <- if (length(submitted_last_names) > 0) submitted_last_names[1] else NA_character_
     title_key            <- make_title_key(fetched_title)
 
-    selected_codes  <- input$mistake_codes %||% character(0)
-    selected_titles <- get_mistake_titles(selected_codes)
-
     rid <- make_report_id(
       orcid      = trimws(input$reporter_orcid %||% ""),
       own_doi    = own_doi,
@@ -220,8 +214,8 @@ server <- function(input, output, session) {
       target_publication_year    = fetched_year,
       target_title_clue          = substr(fetched_title, 1, 80),
       target_title_key           = title_key   %||% NA_character_,
-      mistake_codes              = paste(selected_codes,  collapse = "; "),
-      mistake_titles             = paste(selected_titles, collapse = "; "),
+      mistake_codes              = NA_character_,
+      mistake_titles             = NA_character_,
       quoted_or_paraphrased_text = as.character(input$quoted_or_paraphrased_text %||% ""),
       why_incorrect              = as.character(input$why_incorrect %||% ""),
       stringsAsFactors           = FALSE
@@ -235,14 +229,12 @@ server <- function(input, output, session) {
         "Submitted ✓\n",
         "Report ID: ", rid, "\n",
         "GitHub: ", gh_status, "\n",
-        if (meta_ok) paste0("Cited work: ", fetched_title, " (", fetched_year, ")\n") else "",
-        if (length(selected_codes) > 0) paste0("Miscitation type(s): ", paste(selected_codes, collapse = ", "), "\n") else ""
+        if (meta_ok) paste0("Cited work: ", fetched_title, " (", fetched_year, ")\n") else ""
       ))
 
       updateTextInput(session,     "own_work_doi",                value = "")
       updateTextInput(session,     "citing_work_doi",             value = "")
       updateTextInput(session,     "reporter_orcid",              value = "")
-      updateSelectizeInput(session,"mistake_codes",               selected = character(0))
       updateTextAreaInput(session, "quoted_or_paraphrased_text",  value = "")
       updateTextAreaInput(session, "why_incorrect",               value = "")
       crossref_meta(NULL)

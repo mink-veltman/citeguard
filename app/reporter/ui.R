@@ -65,17 +65,6 @@ ui <- fluidPage(
         rows = 5
       ),
 
-      selectizeInput(
-        "mistake_codes",
-        "Miscitation type(s) (optional)",
-        choices  = mistake_choices,
-        multiple = TRUE,
-        options  = list(
-          placeholder = "Select one or more miscitation types",
-          plugins     = list("remove_button")
-        )
-      ),
-
       actionButton("submit_report", "Submit report", class = "btn-primary"),
       br(), br(),
       verbatimTextOutput("report_status"),
@@ -93,9 +82,6 @@ ui <- fluidPage(
       )
     ),
 
-    mainPanel(
-      h4("Miscitation categories"),
-      tableOutput("mistake_table_out")
-    )
+    mainPanel()
   )
 )
