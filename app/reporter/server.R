@@ -228,12 +228,13 @@ server <- function(input, output, session) {
     )
 
     tryCatch({
-      append_row_safely(row)
+      updated_db <- append_row_safely(row)
+      gh_status  <- push_db_to_github(updated_db, paste0("add report: ", rid))
 
       report_status(paste0(
         "Submitted ✓\n",
         "Report ID: ", rid, "\n",
-        "Saved to: ", DB_PATH, "\n",
+        "GitHub: ", gh_status, "\n",
         if (meta_ok) paste0("Cited work: ", fetched_title, " (", fetched_year, ")\n") else "",
         if (length(selected_codes) > 0) paste0("Miscitation type(s): ", paste(selected_codes, collapse = ", "), "\n") else ""
       ))
