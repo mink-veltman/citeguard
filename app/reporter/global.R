@@ -12,10 +12,5 @@ library(metacheck)
 library(digest)
 library(htmltools)
 
-source("../R/utils.R")
-source("../R/taxonomy.R")
-source("../R/db.R")
-source("../R/extraction.R")
-source("../R/llm.R")
-source("../R/llm_html.R")
-source("../R/analyzer_api.R")
+r_dir <- if (dir.exists("R")) "R" else "../R"
+for (f in list.files(r_dir, pattern = "\\.R$", full.names = TRUE)) source(f)

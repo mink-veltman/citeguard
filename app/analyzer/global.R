@@ -14,6 +14,7 @@ library(digest)
 library(htmltools)
 library(later)
 
-for (f in list.files("../R", pattern = "\\.R$", full.names = TRUE)) source(f)
+r_dir <- if (dir.exists("R")) "R" else "../R"
+for (f in list.files(r_dir, pattern = "\\.R$", full.names = TRUE)) source(f)
 
 sync_db_from_github()
