@@ -11,7 +11,6 @@ server <- function(input, output, session) {
   init_db_if_missing()
 
   report_status <- reactiveVal("")
-  erase_status  <- reactiveVal("")
   crossref_meta <- reactiveVal(NULL)
   orcid_meta    <- reactiveVal(NULL)
   orcid_search_results <- reactiveVal(list())
@@ -248,23 +247,4 @@ server <- function(input, output, session) {
 
   output$report_status <- renderText(report_status())
 
-  observeEvent(input$erase_db, {
-    erase_status("")
-
-    if (!isTRUE(input$confirm_erase_db)) {
-      erase_status("Tick the confirmation box before erasing the database.")
-      return()
-    }
-
-    tryCatch({
-      backup_path <- erase_database_safely()
-      erase_status(paste0("Database erased.\nBackup saved to: ", backup_path))
-      report_status("")
-      updateCheckboxInput(session, "confirm_erase_db", value = FALSE)
-    }, error = function(e) {
-      erase_status(paste("Error:", conditionMessage(e)))
-    })
-  })
-
-  output$erase_status <- renderText(erase_status())
 }

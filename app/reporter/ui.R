@@ -69,17 +69,6 @@ ui <- fluidPage(
       br(), br(),
       verbatimTextOutput("report_status"),
 
-      hr(),
-
-      div(
-        class = "danger-box",
-        strong("Danger zone"),
-        br(), br(),
-        checkboxInput("confirm_erase_db", "I understand this will erase the miscitation database", value = FALSE),
-        actionButton("erase_db", "Erase database", class = "btn-danger"),
-        br(), br(),
-        verbatimTextOutput("erase_status")
-      )
     ),
 
     mainPanel()
