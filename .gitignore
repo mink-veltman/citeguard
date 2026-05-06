@@ -1,0 +1,26 @@
+# Quarto
+/.quarto/
+/_site/
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+
+# LaTeX / PDF
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.tex
+
+# macOS
+.DS_Store
+**/*.quarto_ipynb
+.positai
+
+# Local only
+deploy.R
