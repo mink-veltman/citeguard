@@ -15,4 +15,3 @@ deploy_app <- function(app_name, app_dir) {
 }
 
 deploy_app("citeguard-reporter", "app/reporter")
-deploy_app("citeguard-analyzer", "app/analyzer")
