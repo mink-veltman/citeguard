@@ -23,7 +23,7 @@ execute:
   cache: false
 
 abstract: |
-  Citation accuracy is essential for the reliability of scientific communication, yet maintaining accurate          citations places substantial cognitive and time demands on authors, reviewers, and readers. Errors such as        incorrect metadata, misrepresentation of cited findings, and the continued citation of retracted or outdated      literature remain difficult to detect through manual review alone. This project proposes an automated citation    accuracy and integrity tool to support responsible citation practices in psychological science. Building on       recent computational approaches, the proposed system integrates metadata validation, retraction detection, and    methods for identifying potentially irrelevant or misinterpreted citations. From a human–technology interaction   perspective, the tool aims to reduce workload and support more reliable scientific communication while exploring   the transferability of citation integrity methods across disciplinary contexts.
+
   
 
 keywords: [citations, tool, citation integrity]
