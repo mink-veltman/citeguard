@@ -24,3 +24,8 @@
 
 # Local only
 deploy.R
+
+# Report folder — only MTP3 output tracked
+report/*
+!report/MTP3.qmd
+!report/MTP3.pdf
