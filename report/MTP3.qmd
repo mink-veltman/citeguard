@@ -57,13 +57,51 @@ format:
 
 # Introduction
 
-## Miscitations in science
+“Incidentally, a sin one more degree heinous than an incomplete reference is an inaccurate reference; the former will be caught by the editor or the printer, whereas the latter will stand in print as an annoyance to future investigators and a monument to the writer's carelessness.” [@bruner_psychological_1942, p. 68] *This quote from Katherine Frost Bruner has ironically been inaccurately quoted in three subsequent editions of the APA manual [@rekdal_monuments_2014].*
+
+## **Miscitations in science**
+
+Psychological scientific publications are often built upon assumptions derived from previous research. We cite authors whose work may have informed our hypotheses or methods as a form of credit for their ideas. The purpose of citations, however, may go beyond this normative sense of “giving credit”; they can also be considered persuasive [@gilbert_referencing_1977]. Authors select those references they believe will persuade the reader of the strength of their arguments and the foundation of their research. Citations are a key element of a scientific paper, and the number of works cited per paper has been shown to be steadily increasing since 1980 [@dai2021]. Citations serve as a basis upon which the present research is built. When this basis is inaccurate, it may mislead the reader, especially given that the reader will not be able to read all the cited literature. Citations in a paper offer a comprehensive overview of the previous literature that leads up to the current research. They give an impression of the direction and possible consensus of fields. When citations do not correctly represent what a source actually claimed, they stop functioning as a reliable basis for scientific arguments and can cause further confusion.
+
+Miscitations (sometimes referred to as misquotations) are citation mistakes that go beyond a typo or bibliographic error and instead involve an incorrect or incomplete representation of the cited paper’s contents. In other words, the citing author misstates, overstates, oversimplifies or selectively represents what the cited paper actually shows. These types of mistakes have garnered relatively little attention in psychology, although they have received more attention in medical fields over the past decades, with meta-analytic estimates of total error rates reaching up to 25% [@jergas_quotation_2015]. Knowledge about miscitations in psychological science is comparatively limited. Cobb et al. [-@cobb_problem_2024] found that 9.5% of citations in psychology are inaccurate ("i.e., the citing claim does not correspond at all to the results of the original article" p. 2) and 9.3% are somewhat accurate ("i.e., the citing claim largely and correctly corresponds to the results from the original article but lacks qualifying nuance" p. 2). It appears, then, that miscitations often go unnoticed by reviewers and end up in the published literature. A quick look at the community-driven platform *PubPeer* reveals that, out of 255,993 commented publications, only 31 publications contained a comment with the words “miscitation” or “misquotation.” Although this is only a rough indication, it suggests that miscitations are not often explicitly identified in post-publication critique.
+
+## Possible causes of miscitations
+
+Poor literature practices, such as citing secondary sources or selectively reading cited works, can contribute to the problem. Exploratory research by Klitzing et al. [-@klitzing_literature_2019], based on a survey of researchers, suggested that sources are often read only partially and the greatest importance is placed on the introduction, method and result sections, whereas the discussion section is considered least important. Moreover, around one third of researchers indicated to have cited secondary sources before. [@wicherts_degrees_2016]. Together, these findings suggest that cited works are not always read in full or engaged with in equal depth. This creates room for incomplete or distorted representations of the cited literature. Together, these findings suggest that miscitations can arise quite quickly through a combination of poor literature practices and selective reading of sources.
 
 ## Why miscitations matter
 
-## Existing approaches and limitations
+<!-- FEEDBACK (JW): and elaborate a bit more -->
 
-## The present study
+Authors may want to be correctly cited for their work. Although receiving more citations can still benefit a researcher’s career, despite criticism of the incentives this may create, not all citations are necessarily desirable. Teixeira da Silva and Vuong [-@teixeira_da_silva_right_2021] identify several characteristics of potentially unwanted citations. Among other reasons, they can be part of a sting operation, published in a predatory journal, or indeed be misinterpreted. Klitzing et al. [-@klitzing_literature_2019] additionally report that 50 out of their 101 surveyed researchers indicated that they had been inaccurately cited by colleagues before. The problem is that authors currently have no control over who cites them, and Teixeira da Silva and Vuong argue that authors should have the right to refuse citations if they think it is necessary.
+
+<!-- FEEDBACK (JW): Very nice! Is there an (additional) example you could use based on your coding of the psychological papers? -->
+
+As Sutton [@sutton_spinach_2010] describes, miscited claims can give rise to false beliefs that come to be accepted as true and are cited repeatedly. A comedic example is the Spinach–Popeye–Iron–Decimal-Error story, which has often been used as an illustration of poor critical thinking. The story attributes spinach’s reputation to a misplaced decimal point in the measurement of iron levels and links this idea to the influence of the Popeye comics. Sutton, however, argues that there is no evidence for the alleged decimal-point error and that the story itself has been inaccurately repeated. Nor is there any evidence of the writer of Popeye choosing spinach because of its high iron content. Nonetheless, this example has itself been erroneously cited in many subsequent papers that warn authors to think critically in order to avoid exactly these kinds of mistakes. This illustrates that when miscitations keep getting repeated, they can influence how a finding, story, or even a whole line of research is understood. In that sense, miscitations do not only affect the literature as a whole, but also how individual authors and their work are represented in it.
+
+## What is needed for a solution?
+
+Cobb et al [-@cobb_problem_2024] propose several recommendations for researchers themselves, including recognizing the importance of citation accuracy for psychological science, cross-checking citing claims to ensure they are accurate, citing primary sources rather than relying on secondary sources, consulting the method and results sections of cited articles rather than rely on summaries in abstract, and being clear and precise when reporting the original findings of a study*.* However, these recommendations will primarily help those researchers who are already motivated to reduce miscitations. Other solutions proposed in the discussion sections of the miscitation literature often comprise of suggestions that put increased responsibility on journals and reviewers to check the references in submitted papers. Yet, as long as miscitations are not a widely recognized as a problem, journals may have little incentive to invest in better screening procedures. Even if they did, the growing number of references per paper would make it an enormous task to have to cross-check every cited claim with the original paper.
+
+The number of sources cited per publication has increased substantially since 1980 across disciplines [@dai2021]. When reference lists contain upwards of 60 sources, manually verifying each citation becomes extremely laborious, or even practically impossible. Consequently, readers and reviewers are left to trust that authors have cited accurately and honestly, leaving many potential errors or deliberate miscitations undetected. Automated tools offer a promising solution to this problem. By automatically cross-referencing cited claims against source documents, such tools could flag discrepancies, making systematic verification feasible in a way that manual review cannot achieve.
+
+<!-- FEEDBACK (JW): I think it would be nice to elaborate a bit more on Metacheck since this tool is so important in this research context -->
+
+The human factors literature suggests that automation is especially valuable for tasks that are difficult or unpleasant for people to complete unaided, and for tasks where it is technologically possible to develop an automated solution that would extend human capability [@lee_designing_2017, pp. 359-360]. With the development of research output checking tools such as metacheck [@debruine_metacheck_2026], the possibility of automated software solutions to verify citation integrity becomes clearer. If such a tool could flag miscitations, preventing miscitations in future publications should become much easier.
+
+metacheck is an R package that is currently in development, designed to do all kinds of automated checks on papers such as the consistency and precision of p-values, reported effect sizes, or citations to retracted papers. A module to verify the accuracy of citations would be a natural addition to the package. However, development of this module not straightforward. Several things are needed for such a solution to work. First, an operational definition of miscitations is required. Categorizing the types of mistakes would help in developing software capable of recognizing them and explaining them to its users. At the same time, people may disagree on whether certain citations constitute a mistake. It may therefore be necessary to build a database of miscitations in which the views of the original author, other experts, and the broader scientific community can be combined to reach a verdict on the correctness of particular interpretations, thereby helping the software recognize similar mistakes in the future. Finally, for such a solution to have an impact, it will depend on input from researchers and adoption by journals and reviewers. This project consists of the development of a software solution comprising of one research question divided in three subquestions.
+
+The first subquestion concerns the operationalization of miscitation in psychological science: what types of mistakes can be identified, and can they be systematically defined and categorized for software to recognize them. For this, citations to papers in psychological science and one specific methodological paper on sample size justification were analyzed. The second subquestion addresses the design and functioning of the tool itself. Because no such tool currelty exists, it is not clear what form it shoudl take. Large language models (LLMs) may support automated decision-making, but are unlikely to be sufficient on their own. The best approach maybe to combine user-submitted miscitations with LLM-based interpretations, using existing cases of miscitations to identify novel ones. The third subquestion focuses on researcher input: what are researchers' existing attitudes toward miscitaitons, what are their preferences regarding the tool;s design, who they believe should be responsible for identifying and correcting miscitations, and under what conditions they would be willing to adopt such a tool? For this researchers who have recently published in social sciences were surveyed.
+
+*RQ 1: How can automated software be used to help prevent miscitations from being published and propagated in the psychological science literature?*
+
+*RQ 1.1: What constitutes miscitation, and what are the criteria to accurately and consistently detect and flag miscitations in a text?*
+
+*RQ 1.2: What are the requirements for software to be able to automatically flag miscitations, and to what extent is automation possible?*
+
+*RQ 1.3: How would the scientific community respond to this software, and how can we make sure that it will be adopted and effectively used?*
+
+\newpage
 
 # Operationalization and definition of miscitations
 
@@ -73,15 +111,25 @@ format:
 
 ## Inter-rater reliability
 
-# User survey
+# User Study - Survey
 
 ## Methods
 
 ### Participants
 
+Participants were authors who have recently published an article in a list of journals covering psychology, sociology, political science, economics, communication, education, criminology, demography, and anthropology. E-mail addresses of participants were collected from open access texts using the OpenAlex API [@priem]. 1338 addresses were collected and participants were e-mailed in batches of 100, using the BCC field, until the target sample size of X was reached.
+
 ### Materials
 
+The survey consisted of four sections and was administered online via Microsoft Forms. The full survey is reproduced in Appendix B. The first section assessed awareness, and personal experience with miscitations. Participants indicated whether they had ever found miscitations of their own work, and how concerned they were about miscitations in scientific literature. They also indicated how responsible they considered each of four stakeholder groups (authors, reviewers, journal editors, readers) for preventing miscitations.
+
+The second section focused on attitudes toward the proposed software solution. Before answering, participants read a brief text summarizing the prevalence of citation errors in the literature and describing the proposed database-based solution. They were then asked how willing they themselves would be to submit a miscitation report to the database, and how willing they expected other researchers in their field to be. Each closed-ended item in this section was followed by an open text field for participants to explain their answer.
+
+The third section addressed the design of the submission system. Participants were asked whether open submissions by any reader should be allowed, or whether only the original author should be allowed to submit miscitation reports to their papers. Participants were asked with open question format how potential conflicts between competing miscitation reports could be resolved. Finally, the participants were asked to rate how supportive they would be of different parties (authors, reviewers, journal editors, peers) using the tool. As in section 2, each closed-ended item was followed by an open text field for participants to explain their answer. A final open-ended item invited any additional recommendations or concerns.
+
 ### Procedure
+
+Responses to closed-ended items were summarized using descriptive statistics. Responses to open-ended items were analyzed thematically: responses were read and inductively coded, then grouped into recurring themes.
 
 ## Results
 
@@ -108,3 +156,120 @@ format:
 ## Limitations
 
 ## Future directions
+
+\newpage
+
+# References
+
+::: {#refs}
+:::
+
+\newpage
+
+# Email Collection
+
+```{=latex}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+```
+
+Email addresses of corresponding authors were collected via two methods. First, open-access PDFs were scraped for email addresses listed on the title page, yielding 443 addresses across 34 journals. Second, the OpenAlex API was queried for corresponding-author email addresses, yielding 912 addresses across 35 journals. After merging and deduplication, 1,338 unique addresses were collected. Participants were contacted in batches of 100 using Outlook's BCC field.
+
+The 35 journals spanned nine disciplines: psychology, political science, economics, sociology, communication, demography, anthropology, criminology, and education. The table below shows the number of emails sent per journal across all batches.
+
+| Journal | Discipline | *n* |
+|----|----|---:|
+| American Anthropologist | Anthropology | 17 |
+| Criminology | Criminology | 5 |
+| American Educational Research Journal | Education | 3 |
+| Review of Educational Research | Education | 1 |
+| American Economic Review | Economics | 79 |
+| Economic Journal | Economics | 63 |
+| Journal of Political Economy | Economics | 32 |
+| Quarterly Journal of Economics | Economics | 28 |
+| Review of Economic Studies | Economics | 35 |
+| Communication Research | Communication | 14 |
+| Human Communication Research | Communication | 6 |
+| Journal of Communication | Communication | 8 |
+| Demography | Demography | 14 |
+| Population and Development Review | Demography | 27 |
+| Journal of Experimental Psychology: General | Psychology | 42 |
+| Journal of Experimental Social Psychology | Psychology | 60 |
+| Journal of Personality and Social Psychology | Psychology | 22 |
+| Personality and Social Psychology Bulletin | Psychology | 52 |
+| Psychological Bulletin | Psychology | 3 |
+| Psychological Review | Psychology | 23 |
+| Psychological Science | Psychology | 48 |
+| Social Psychological and Personality Science | Psychology | 38 |
+| Political Psychology | Psychology / Political Science | 38 |
+| American Journal of Political Science | Political Science | 40 |
+| American Political Science Review | Political Science | 233 |
+| British Journal of Political Science | Political Science | 109 |
+| Journal of Politics | Political Science | 62 |
+| Political Analysis | Political Science | 113 |
+| Political Behavior | Political Science | 106 |
+| World Politics | Political Science | 10 |
+| American Journal of Sociology | Sociology | 9 |
+| American Sociological Review | Sociology | 14 |
+| Social Forces | Sociology | 20 |
+| Sociological Methods & Research | Sociology | 9 |
+| Sociological Theory | Sociology | 1 |
+| **Total** |  | **1,384** |
+
+\newpage
+
+# Survey Instrument
+
+The survey was administered online via Microsoft Forms. The introductory definition of miscitation presented to participants was: *"A miscitation occurs when a citing paper misrepresents the findings of the cited work, for example by overstating a result, omitting important nuances, or describing findings that do not exist in the original paper."*
+
+```{=latex}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+```
+
+### Section 1: Awareness and experience
+
+**Q1.** Have you ever found miscitations of your own work in published literature?\
+*Options: Yes, on multiple occasions / Yes, once / No / I have never checked for miscitations*
+
+**Q2.** How concerned are you about authors misciting your, or others' scientific works?\
+*5-point scale: 1 = Very unconcerned, 5 = Very concerned*
+
+**Q3.** Who do you think should be responsible for preventing miscitations in the scientific literature?\
+*5-point scale per stakeholder (1 = Not at all responsible, 5 = Fully responsible): Authors / Reviewers / Journal editors / Readers*
+
+### Section 2: Adoption of automated solution
+
+*The following vignette was presented before this section:*
+
+> Citation errors might be more common than most researchers assume. In medical literature, up to 25% of citations have been found to contain errors (Jergas & Baethge, 2015). In psychology specifically, Cobb et al. (2024) found that 9.5% of citations in leading journals completely misrepresent the findings of the cited work, and a further 9.3% omit important nuances, meaning roughly one in five citations may be inaccurate. The number of references per paper has been steadily increasing since 1980 (Dai et al., 2021), making it an enormous task for reviewers to cross-check every cited claim against its source. Automated tools may therefore be the most practical path toward catching miscitations before they enter the published literature.
+>
+> We propose the creation of a database where users (original authors and critical readers) can submit cases of miscitations, which will then be used to automatically warn for future miscitations. When the database is populated, the software will automatically check references to miscited papers and compare the citation to known mistakes. When implemented, this tool will be able to automatically warn for miscitations in various stages of the publication process—during writing or during peer review.
+
+**Q4.** If you found a paper that miscited your work, how willing would *you* be to submit a miscitation report to a database like this?\
+*5-point scale: 1 = Very unwilling, 5 = Very willing*
+
+**Q5.** *(Open)* Use this space if you want to explain your answer to the previous question.
+
+**Q6.** How willing do you think *other researchers* in your field would be to report to a database like this?\
+*5-point scale: 1 = Very unwilling, 5 = Very willing*
+
+**Q7.** *(Open)* Use this space if you want to explain your answer to the previous question.
+
+### Section 3: User-submitted miscitations
+
+**Q8.** We are exploring the possibility of allowing any reader, rather than only the original authors, to submit miscitations to the database. Do you think this should be allowed?\
+*Options: Yes, it should be possible / I have concerns*
+
+**Q9.** *(Open)* Please describe your concerns about letting any reader submit to the database.
+
+**Q10.** *(Open)* If we were to allow open submissions, conflicting reports about the same citation would likely occur. How do you think such conflicts should be resolved? *(Suggested approaches offered as prompts: peer voting; editorial review; author privilege.)*
+
+**Q11.** When the tool is fully developed, how supportive would you be of the following parties using it to detect miscitations?\
+*5-point scale per party (1 = Strongly oppose, 5 = Strongly support): Authors in the writing process / Reviewers reviewing a paper / Journal editors / Peers offering post-publication criticism*
+
+**Q12.** *(Open)* Please use this field to explain your choices to the previous question.
+
+### Section 4: Any other thoughts?
+
+**Q13.** *(Open)* Please use this field to share any other recommendations, concerns, feedback, or suggestions that you want us to consider in the design process.
