@@ -1,0 +1,1281 @@
+---
+title: "citeguard: A Community-Driven Tool for Preventing Miscitations"
+
+toc: true 
+
+author:
+  - name: Mink Veltman
+    corresponding: true
+    email: m.veltman@student.tue.nl
+    affiliations:
+      - id: id1
+        name: "Eindhoven University of Technology"
+        group: 
+        department: Human-Technology Interaction
+
+
+author-note:
+  disclosures:
+    conflict of interest: The author has no conflict of interest to declare.
+
+execute: 
+  echo: false
+  cache: false
+
+abstract: "Miscitations are instances where a cited paper's findings are misrepresented, overstated or distorted. They are an underexamined problem in scientific publishing. This work presents citeguard, a community-driven software tool for preventing miscitations in scientific literature. To establish an operational definition of miscitations, citations in two datasets were analyzed: a sample of Psychological Science papers (14% error rate, n = 77) and citations to a methodological paper on sample size justification (30% error rate, n = 77). Analysis yielded ten miscitation types, formalized into a taxonomy. A survey of social science researchers (N = 139) found that respondents were moderately concerned about miscitations and moderately willing to contribute to a miscitation database, with ease of use, time constraints, and moral hesitancy as the primary barriers to adoption. Informed by the survey findings, citeguard was designed around three principles: minimum effort, constructive framing, and transparency. The tool consists of a web-based reporter application for submitting miscitation reports, a publicly accessible version-controlled database, and a checker that cross-references a paper's citations against the database and returns warnings for previously miscited papers. Together, these components aim to flag known miscitations before a paper is published."
+
+  
+
+keywords: [miscitations, citation accuracy, research integrity, psychological science]
+
+word-count: true
+floatsintext: true
+numbered-lines: false
+first-page: 1
+
+bibliography: references.bib
+link-citations: true
+linkcolor: pink
+
+mask: false
+meta-analysis: false
+
+
+draft-date: false
+lang: en
+
+fontsize: 12pt
+draftall: false
+nocorrespondence: true
+suppress-author-note: true
+suppress-title-page: true
+
+header-includes:
+  - \usepackage{float}
+
+format:
+  apaquarto-pdf:
+    documentmode: stu
+    keep-tex: true
+---
+
+
+```{r}
+#| label: setup-paths
+#| include: false
+path_survey         <- "../data/survey_data_email.xlsx"
+path_survey_lakens  <- "../data/survey_data_lakens.xlsx"
+path_psychsci       <- "../data/psychsci_citations.xlsx"
+path_ssj            <- "../data/ssj_citations.xlsx"
+path_email_summary  <- "../data/email_collection_summary.csv"
+path_open_responses <- "../data/open_responses_quotes.qmd"
+```
+
+```{r}
+#| label: setup
+#| include: false
+library(tidyverse)
+library(readxl)
+library(readr)
+library(irr)
+library(knitr)
+
+count_quotes <- function(..., file = path_open_responses) {
+  lines <- readLines(file, warn = FALSE)
+  headers <- c(...)
+  total <- 0L
+  for (h in headers) {
+    starts <- which(startsWith(lines, paste0("#### ", h)))
+    for (s in starts) {
+      rest <- lines[(s + 1):length(lines)]
+      end_rel <- grep("^#{1,4} |^---$", rest)[1]
+      if (is.na(end_rel)) end_rel <- length(rest)
+      total <- total + sum(grepl("^> ", rest[seq_len(end_rel)]))
+    }
+  }
+  total
+}
+library(kableExtra)
+
+survey_raw <- read_xlsx(path_survey)
+
+survey <- survey_raw |>
+  filter(as.Date(`Start time`) >= as.Date("2026-05-11")) |> #This is the date that the collection started, any responses before this time were for testing purposes
+  rename(
+    q1_found       = 8,
+    q2_concern     = 9,
+    q3_authors     = 10,
+    q3_reviewers   = 11,
+    q3_editors     = 12,
+    q3_readers     = 13,
+    q4_self        = 14,
+    q5_open        = 15,
+    q6_others      = 16,
+    q7_open        = 17,
+    q8_open_sub    = 18,
+    q9_open        = 19,
+    q10_open       = 20,
+    q11_authors    = 21,
+    q11_reviewers  = 22,
+    q11_editors    = 23,
+    q11_peers      = 24,
+    q12_open       = 25,
+    q13_open       = 26
+  )
+
+concern_levels <- c(
+  "very unconcerned" = 1, "somewhat unconcerned" = 2,
+  "neither concerned nor unconcerned" = 3,
+  "somewhat concerned" = 4, "very concerned" = 5
+)
+responsibility_levels <- c(
+  "Not at all responsible" = 1, "Mostly not responsible" = 2,
+  "Somewhat responsible" = 3, "Partially responsible" = 3,
+  "Mostly responsible" = 4, "Fully responsible" = 5
+)
+willingness_levels <- c(
+  "Very unwilling" = 1, "Unwilling" = 2, "Neutral" = 3,
+  "Willing" = 4, "Very willing" = 5
+)
+support_levels <- c(
+  "Strongly oppose" = 1, "Oppose" = 2, "Neutral" = 3,
+  "Neither oppose, nor support" = 3,
+  "Support" = 4, "Strongly support" = 5
+)
+
+survey <- survey |>
+  mutate(
+    q2_n  = concern_levels[tolower(q2_concern)],
+    q3_authors_n   = responsibility_levels[q3_authors],
+    q3_reviewers_n = responsibility_levels[q3_reviewers],
+    q3_editors_n   = responsibility_levels[q3_editors],
+    q3_readers_n   = responsibility_levels[q3_readers],
+    q4_n  = willingness_levels[q4_self],
+    q6_n  = willingness_levels[q6_others],
+    q11_authors_n   = support_levels[q11_authors],
+    q11_reviewers_n = support_levels[q11_reviewers],
+    q11_editors_n   = support_levels[q11_editors],
+    q11_peers_n     = support_levels[q11_peers]
+  )
+
+n_resp <- nrow(survey)
+
+# ── Daniel Lakens audience dataset ────────────────────────────────────────────
+daniel <- read_xlsx(path_survey_lakens) |>
+  rename(
+    q1_found = 8, q2_concern = 9,
+    q3_authors = 10, q3_reviewers = 11, q3_editors = 12, q3_readers = 13,
+    q4_self = 14, q6_others = 16, q8_open_sub = 18,
+    q11_authors = 21, q11_reviewers = 22, q11_editors = 23, q11_peers = 24
+  ) |>
+  mutate(
+    q2_n            = concern_levels[tolower(q2_concern)],
+    q3_authors_n    = responsibility_levels[q3_authors],
+    q3_reviewers_n  = responsibility_levels[q3_reviewers],
+    q3_editors_n    = responsibility_levels[q3_editors],
+    q3_readers_n    = responsibility_levels[q3_readers],
+    q4_n            = willingness_levels[q4_self],
+    q6_n            = willingness_levels[q6_others],
+    q11_authors_n   = support_levels[q11_authors],
+    q11_reviewers_n = support_levels[q11_reviewers],
+    q11_editors_n   = support_levels[q11_editors],
+    q11_peers_n     = support_levels[q11_peers]
+  )
+n_daniel <- nrow(daniel)
+
+both_smp <- bind_rows(
+  survey |> mutate(smp = "Email sample"),
+  daniel |> mutate(smp = "Lakens audience")
+) |> mutate(smp = factor(smp, levels = c("Email sample", "Lakens audience")))
+
+smp_cols <- c("Email sample" = "#DC267F", "Lakens audience" = "#785EF0")
+
+wt_q2   <- wilcox.test(survey$q2_n, daniel$q2_n, exact = FALSE)
+wt_q2_r <- abs(qnorm(wt_q2$p.value / 2)) / sqrt(n_resp + n_daniel)
+
+# ── Self–other discrepancy (Q4 vs Q6) ─────────────────────────────────────────
+ao_diff_rep    <- survey$q4_n - survey$q6_n
+ao_diff_dan    <- daniel$q4_n - daniel$q6_n
+wt_ao_rep      <- wilcox.test(survey$q4_n, survey$q6_n, paired = TRUE, exact = FALSE)
+wt_ao_dan      <- wilcox.test(daniel$q4_n, daniel$q6_n, paired = TRUE, exact = FALSE)
+ao_r_rep       <- abs(qnorm(wt_ao_rep$p.value / 2)) / sqrt(sum(!is.na(ao_diff_rep)))
+ao_r_dan       <- abs(qnorm(wt_ao_dan$p.value / 2)) / sqrt(sum(!is.na(ao_diff_dan)))
+n_higher_rep   <- sum(ao_diff_rep > 0, na.rm = TRUE)
+n_higher_dan   <- sum(ao_diff_dan > 0, na.rm = TRUE)
+
+# ── Q11 peers vs other parties (paired t-tests, both samples combined) ────────
+tt_q11_pa  <- t.test(both_smp$q11_peers_n, both_smp$q11_authors_n,   paired = TRUE)
+tt_q11_pr  <- t.test(both_smp$q11_peers_n, both_smp$q11_reviewers_n, paired = TRUE)
+tt_q11_pe  <- t.test(both_smp$q11_peers_n, both_smp$q11_editors_n,   paired = TRUE)
+n_q11      <- sum(!is.na(both_smp$q11_peers_n) & !is.na(both_smp$q11_authors_n))
+q11_d_pa   <- tt_q11_pa$statistic / sqrt(n_q11)
+q11_d_pr   <- tt_q11_pr$statistic / sqrt(n_q11)
+q11_d_pe   <- tt_q11_pe$statistic / sqrt(n_q11)
+
+mean_ci_smp <- function(data, cols, labels, title) {
+  purrr::map2_dfr(cols, labels, \(col, lbl)
+    data |>
+      group_by(smp) |>
+      summarise(M  = mean(.data[[col]], na.rm = TRUE),
+                SE = sd(.data[[col]], na.rm = TRUE) / sqrt(sum(!is.na(.data[[col]]))),
+                .groups = "drop") |>
+      mutate(item = lbl)
+  ) |>
+    mutate(item = factor(item, levels = rev(labels))) |>
+    ggplot(aes(x = M, y = item, colour = smp)) +
+    geom_errorbar(aes(xmin = M - 1.96*SE, xmax = M + 1.96*SE),
+                  width = 0.18, position = position_dodge(width = 0.55)) +
+    geom_point(size = 2, position = position_dodge(width = 0.55)) +
+    scale_colour_manual(values = smp_cols) +
+    scale_x_continuous(limits = c(1, 5), breaks = 1:5) +
+    labs(title = title, x = "Mean (1–5)", y = NULL, colour = NULL) +
+    theme_minimal(base_size = 10) +
+    theme(legend.position = "top",
+          plot.title = element_text(size = 8, face = "bold"),
+          legend.text = element_text(size = 7),
+          legend.key.size = unit(0.3, "cm"))
+}
+
+# ── Inter-rater reliability ────────────────────────────────────────────────────
+blind <- read_xlsx(path_ssj, sheet = "data")
+orig  <- read_xlsx(path_ssj, sheet = "data")
+
+START_ROW <- 24
+blind_sub <- dplyr::slice(blind, START_ROW:dplyr::n())
+orig_sub  <- dplyr::slice(orig,  START_ROW:dplyr::n())
+
+EXCLUDED_EXCEL_ROWS <- c(52L, 62L)
+excluded_reasons <- c(
+  "52" = "Not confident in rating",
+  "62" = "Did not understand what the authors did"
+)
+
+is_uncertain <- function(x) grepl("DON.T UNDERSTAND WHAT", toupper(as.character(x)))
+
+normalize_verdict <- function(x) {
+  x <- trimws(toupper(as.character(x)))
+  dplyr::case_when(
+    grepl("^INC",                 x) ~ "Incorrect",
+    grepl("DON.T UNDERSTAND WHY", x) ~ "Incorrect",
+    grepl("NOT MENTION|IS MENTION", x) ~ "Incorrect",
+    grepl("^ASS",                 x) ~ "Assumed correct",
+    grepl("^MIS",                 x) ~ "Misattributed",
+    grepl("^PAR",                 x) ~ "Partially correct",
+    grepl("^COR",                 x) ~ "Correct",
+    nzchar(x)                        ~ x,
+    TRUE                             ~ NA_character_
+  )
+}
+
+mink_raw     <- trimws(toupper(blind_sub[["mv_verdict"]]))
+original_raw <- trimws(toupper(orig_sub[["dl_verdict"]]))
+
+comparison <- dplyr::tibble(
+  excel_row    = (START_ROW:(START_ROW + nrow(blind_sub) - 1)) + 1L,
+  authors      = blind_sub$authors,
+  doi          = blind_sub$doi,
+  mink_raw     = mink_raw,
+  orig_raw     = original_raw,
+  mink_verdict = normalize_verdict(mink_raw),
+  orig_verdict = normalize_verdict(original_raw),
+  uncertain    = excel_row %in% EXCLUDED_EXCEL_ROWS | is_uncertain(mink_raw)
+) |> dplyr::mutate(match = mink_verdict == orig_verdict)
+
+excluded   <- dplyr::filter(comparison, uncertain)
+analyzable <- dplyr::filter(comparison, !uncertain,
+                            !is.na(mink_verdict), nzchar(mink_verdict),
+                            !is.na(orig_verdict),  nzchar(orig_verdict))
+
+kappa_res <- kappa2(cbind(analyzable$mink_verdict, analyzable$orig_verdict),
+                    weight = "unweighted")
+k   <- kappa_res$value
+z   <- kappa_res$statistic
+se  <- k / z
+p   <- kappa_res$p.value
+pct <- 100 * mean(analyzable$match)
+n   <- nrow(analyzable)
+
+interpret_kappa <- function(k) dplyr::case_when(
+  k < 0    ~ "poor (less than chance)",
+  k < 0.20 ~ "slight",
+  k < 0.40 ~ "fair",
+  k < 0.60 ~ "moderate",
+  k < 0.80 ~ "substantial",
+  TRUE     ~ "almost perfect"
+)
+
+# ── Email collection ───────────────────────────────────────────────────────────
+# Scalar counts pre-computed from the original email files (not included in
+# the public deposit as they contain personal addresses).
+n_oa          <- 912L
+n_journals_oa <- 35L
+n_total_unique <- 1278L
+batch_unique  <- c(88, 93, 96, 99, 99, 100, 99, 99, 100, 100, 100, 100, 100, 84)
+
+# Non-personal addresses manually removed before sending (batch index → n removed)
+n_removed <- c("1" = 8L, "2" = 8L, "3" = 6L, "4" = 6L, "5" = 6L, "6" = 8L)
+
+batch_summary <- read_csv(path_email_summary, show_col_types = FALSE)
+
+discipline_map <- c(
+  "American Anthropologist"                    = "Anthropology",
+  "Criminology"                                = "Criminology",
+  "American Educational Research Journal"      = "Education",
+  "Review of Educational Research"             = "Education",
+  "American Economic Review"                   = "Economics",
+  "Economic Journal"                           = "Economics",
+  "Journal of Political Economy"               = "Economics",
+  "Quarterly Journal of Economics"             = "Economics",
+  "Review of Economic Studies"                 = "Economics",
+  "Communication Research"                     = "Communication",
+  "Human Communication Research"               = "Communication",
+  "Journal of Communication"                   = "Communication",
+  "Demography"                                 = "Demography",
+  "Population and Development Review"          = "Demography",
+  "Journal of Experimental Psychology: General"          = "Psychology",
+  "Journal of Experimental Social Psychology"            = "Psychology",
+  "Journal of Personality and Social Psychology"         = "Psychology",
+  "Personality and Social Psychology Bulletin"           = "Psychology",
+  "Psychological Bulletin"                               = "Psychology",
+  "Psychological Review"                                 = "Psychology",
+  "Psychological Science"                                = "Psychology",
+  "Social Psychological and Personality Science"         = "Psychology",
+  "Political Psychology"                                 = "Psychology / Political Science",
+  "American Journal of Political Science"                = "Political Science",
+  "American Political Science Review"                    = "Political Science",
+  "British Journal of Political Science"                 = "Political Science",
+  "Journal of Politics"                                  = "Political Science",
+  "Political Analysis"                                   = "Political Science",
+  "Political Behavior"                                   = "Political Science",
+  "World Politics"                                       = "Political Science",
+  "American Journal of Sociology"                        = "Sociology",
+  "American Sociological Review"                         = "Sociology",
+  "Social Forces"                                        = "Sociology",
+  "Sociological Methods & Research"                      = "Sociology",
+  "Sociological Theory"                                  = "Sociology"
+)
+
+journal_totals <- batch_summary |>
+  group_by(Journal = journal) |>
+  summarise(n = sum(n), .groups = "drop") |>
+  mutate(Discipline = discipline_map[Journal]) |>
+  arrange(Discipline, Journal)
+```
+
+```{=latex}
+\definecolor{miscitecolor}{gray}{0.2}
+\floatplacement{figure}{H}
+\floatplacement{table}{H}
+% Fix apaquarto's broken ThreePartTable/twocolumntable definitions:
+% their versions wrap \onecolumn/\twocolumn inside a float, which is invalid LaTeX
+% and causes content after the table to be swallowed. Instead, switch column mode
+% in the normal text flow so longtable renders in single-column mode where it works.
+\makeatletter
+\def\ThreePartTable{\clearpage\onecolumn}
+\def\endThreePartTable{\clearpage\twocolumn}
+\@ifundefined{twocolumntable}{%
+  \newenvironment{twocolumntable}{\clearpage\onecolumn}{\clearpage\twocolumn}%
+}{%
+  \renewenvironment{twocolumntable}{\clearpage\onecolumn}{\clearpage\twocolumn}%
+}
+\makeatother
+```
+
+# Introduction
+
+
+“Incidentally, a sin one more degree heinous than an incomplete reference is an inaccurate reference; the former will be caught by the editor or the printer, whereas the latter will stand in print as an annoyance to future investigators and a monument to the writer's carelessness.” [@bruner_psychological_1942, p. 68] This quote from Katherine Frost Bruner has ironically been inaccurately quoted in three subsequent editions of the APA manual [@rekdal_monuments_2014].
+
+## **Miscitations in science**
+
+Psychological scientific publications are often built upon assumptions derived from previous research. We cite authors whose work may have informed our hypotheses or methods as a form of credit for their ideas. The purpose of citations, however, may go beyond this normative sense of “giving credit”; they can also be considered persuasive [@gilbert_referencing_1977]. Authors select those references they believe will persuade the reader of the strength of their arguments and the foundation of their research. Citations are a key element of a scientific paper, and the number of works cited per paper has been shown to be steadily increasing since 1980 [@dai2021]. Citations serve as a basis upon which the present research is built. When this basis is inaccurate, it may mislead the reader, especially given that the reader will not be able to read all the cited literature. Citations in a paper offer a comprehensive overview of the previous literature that leads up to the current research. They give an impression of the direction and possible consensus of fields. When citations do not correctly represent what a source actually claimed, they stop functioning as a reliable basis for scientific arguments and can cause confusion.
+
+Miscitations are citation mistakes that go beyond a typo or bibliographic error and instead involve an incorrect or incomplete representation of the cited paper’s contents. In other words, the citing author misstates, overstates, oversimplifies or selectively represents what the cited paper actually shows. These types of mistakes have garnered relatively little attention in psychology, although they have received more attention in medical fields over the past decades, with meta-analytic estimates of total error rates reaching up to 25% [@jergas_quotation_2015]. Knowledge about miscitations in psychological science is comparatively limited. Cobb et al. [-@cobb_problem_2024] found that 9.5% of citations in psychology are inaccurate ("i.e., the citing claim does not correspond at all to the results of the original article" p. 2) and 9.3% are somewhat accurate ("i.e., the citing claim largely and correctly corresponds to the results from the original article but lacks qualifying nuance" p. 2). It appears, then, that miscitations often go unnoticed by reviewers and end up in the published literature. A quick look at the community-driven platform *PubPeer* [@pubpeer] reveals that, out of 255,993 commented publications, only 31 publications contained a comment with the words “miscitation” or “misquotation.” Although this is only a rough indication, it suggests that miscitations are not often explicitly identified in post-publication critique.
+
+## Possible causes of miscitations
+
+Poor literature practices, such as citing secondary sources or selectively reading cited works, can contribute to the problem. Exploratory research by Klitzing et al. [-@klitzing_literature_2019], based on a survey of researchers, suggested that sources are often read only partially and the greatest importance is placed on the introduction, method and result sections, whereas the discussion section is considered least important. Moreover, around one third of researchers indicated to have cited secondary sources before [@wicherts_degrees_2016]. When researchers cite a claim they encountered in a secondary source without consulting the original paper, any error in that secondary source is passed on unchecked. Then, if the claim is subsequently cited by a third paper without verification, the error spreads even further. Over time a claim may travel away from its origins. Cognitive factors may also play a role. Confirmation bias, the tendency to favor information that supports one's existing expectations could influence how researchers select, read and interpret literature. Authors who approach a source with a particular belief in mind may misread the findings or deliberately paraphrase them in a way that confirms their hypothesis.
+
+## Why miscitations matter
+
+Authors may want to be correctly cited for their work. Although receiving more citations can still benefit a researcher’s career, despite criticism of the incentives this may create. Not all citations are necessarily desirable. Teixeira da Silva and Vuong [-@teixeira_da_silva_right_2021] identify several characteristics of potentially unwanted citations. Among other reasons, they can be part of a sting operation, be published in a predatory journal, or indeed be misinterpreted. Klitzing et al. [-@klitzing_literature_2019] additionally report that 50 out of their 101 surveyed researchers indicated that they had been inaccurately cited by colleagues before, suggesting that the problem is common and researchers are aware of the issue. The problem is that authors currently have no control over who cites them or how. Teixeira da Silva and Vuong argue that this should change, and that authors should have the right to refuse citations they consider harmful or misrepresentative.
+
+Beyond the harm to individual authors, miscitations carry consequences for science as a whole. When incorrect interpretations of findings are repeatedly cited across papers, they can wrongfully become part of the background knowledge of a field. Especially when researchers rely only on these secondary descriptions without consulting the original source the errors may propagate further. As Sutton [-@sutton_spinach_2010] shows, miscited claims can give rise to false beliefs that come to be accepted as true and are cited repeatedly. The comedic example that Sutton uses is the Spinach-Popeye-Iron-Decimal-Error story. According to the story a 19th scientist measuring the iron content of spinach made a mistake misplacing a decimal point, making spinach appear ten times richer in iron than it actually is. This error went uncorrected for decades and supposedly influenced the creators of Popeye to choose spinach as his strength-giving food. Interestingly, there is no evidence that the writer of Popeye chose spinach because of its iron content; Segar chose spinach for its vitamin A content. Additionally, Sutton argues that there is no evidence for the decimal-point error either. Adding a layer of irony, Sutton documents that the story itself has been repeatedly cited as a cautionary example of the importance of checking original sources, by authors who had not thoroughly checked the original sources themselves, since the evidence for the SPIDES story does not hold up.
+
+The identified miscitations in the present study offer more recent and less comedic examples of how such distortions can occur in psychological science. In one case, a study on vocal cues and hierarchical rank was cited as evidence that high-rank speakers use a lower pitch; yet the original study found the exact opposite effect. If subsequent authors would repeat this misconstrued finding without consulting the original, the mistake could spread through the literature over time.
+
+## What is needed for a solution?
+
+Cobb et al. [-@cobb_problem_2024] propose several recommendations for researchers themselves, including recognizing the importance of citation accuracy for psychological science, cross-checking citing claims to ensure they are accurate, citing primary sources rather than relying on secondary sources, consulting the method and results sections of cited articles rather than relying on summaries in the abstract, and being clear and precise when reporting the original findings of a study. However, these recommendations will primarily help those researchers who are already motivated to reduce miscitations. Other solutions proposed in the discussion sections of the miscitation literature often comprise of suggestions that put increased responsibility on journals and reviewers to check the references in submitted papers. Yet, as long as miscitations are not widely recognized as a problem, journals may have little incentive to invest in better screening procedures. Even if they did, the growing number of references per paper would make it an enormous task to have to cross-check every cited claim with the original paper.
+
+The number of sources cited per publication has increased substantially since 1980 across disciplines [@dai2021]. When reference lists contain upwards of 60 sources, manually verifying each citation becomes extremely laborious, or even practically impossible. Consequently, readers and reviewers are left to trust that authors have cited accurately and honestly, leaving many potential errors or deliberate miscitations undetected. Automated tools offer a promising solution to this problem. By matching citations against a database of miscitations, such tools can alert authors and reviewers to previously identified errors, making systematic verification feasible in a way that manual review cannot achieve.
+
+Retraction Watch [@retractionwatch] is a good example of a community supported tool for protecting the integrity of scientific publications. It is a database that tracks retracted papers across disciplines and makes this information publicly accessible, enabling the scientific community to identify and flag citations to work that has already been withdrawn. With over 65,000 retracted papers indexed, it offers a substantial and ever-growing record. Citation managers such as Zotero [@zotero] and tools such as metacheck can already draw on retraction databases to flag citations to retracted papers automatically. Retraction Watch proves that a publicly accessible, community-supported database for tracking problems in the scientific record is feasible and may help with preventing the propagation of errors. PubPeer [@pubpeer] is another exemplary tool. It is a post-publication peer review platform that allows researchers to flag methodological concerns, errors, and integrity issues in published work. A Zotero [@zotero] plugin further extends its utility by automatically highlighting references in a user's library that have active discussions on PubPeer.
+
+Automation is defined as the execution of a task by a machine that was previously carried out by a human [@parasuraman1997]. The human factors literature suggests that automation is especially valuable for tasks that are difficult or unpleasant for people to complete unaided, and for tasks where it is technologically viable to develop an automated solution that would extend human capability [@lee_designing_2017, pp. 359-360]. Citation verification seems to meet both criteria. Although checking references may not exactly resemble a traditional vigilance task (such as a factory worker monitoring a production line for defects), it shares the core property of sustained attention across many items to detect errors that occur infrequently. Warm et al. [-@warm2008] show that such tasks are more cognitively demanding than commonly assumed. Applied to citation checking, this suggests that even motivated reviewers may not be able to sustain the level of attention required to reliably check citations across a full reference list. With the development of research output checking tools such as metacheck [-@debruine_metacheck_2026], the possibility of automated software solutions to verify citation integrity becomes clearer. If such a tool could flag miscitations, preventing miscitations in future publications could become much easier.
+
+metacheck is an R package that is currently in development, designed to do all kinds of automated checks on papers such as the consistency and precision of p-values, reported effect sizes, or citations to retracted papers. metacheck can generate full reports of a paper running all the checks, or a specified selection of checks at once. The checks are meant to assist, but not replace human expertise. A module to verify the accuracy of citations would be a natural addition to the package. However, development of this module is not straightforward. Several things are needed for such a solution to work. First, an operational definition of miscitations is required. Categorizing the types of mistakes would help in developing software capable of recognizing them and explaining them to its users. At the same time, people may disagree on whether certain citations constitute a mistake. While large language models (LLMs) could compare the wording of a citing claim against a source document, they might not be reliable in cases where the correctness depends on a nuanced interpretation, or specific context. It may therefore be necessary to build a database of miscitations in which the views of the original author, other experts, and the broader scientific community can be combined to reach a verdict on the correctness of particular interpretations, thereby helping the software recognize similar mistakes in the future. Finally, for such a solution to have an impact, it will depend on input from researchers and adoption by journals and reviewers. This project consists of the development of a software solution comprising one research question divided in three subquestions.
+
+
+More than 80 years ago, Bruner described inaccurate references as a monument to the writer's carelessness, a warning that was itself inaccurately reproduced across three editions of the APA manual. The fact that miscitations remain common today suggests the problem may be bigger than individual carelessness: it reflects the absence of mechanisms to verify cited claims. *The present study investigates whether software can help fill this gap, guided by the following research question.*
+
+*RQ 1: How can automated software be used to help prevent miscitations from being published and propagated in the psychological science literature?*
+
+This overarching question is addressed through three subquestions that reflect the three necessary elements to translate the problem into a software solution.
+
+*RQ 1.1: What constitutes miscitation, and what are the criteria to accurately and consistently detect and flag miscitations in a text?*
+
+The first subquestion concerns the operationalization of miscitation in psychological science: what types of mistakes can be identified, and can they be systematically defined and categorized. Citations to papers in psychological science and one specific methodological paper on sample size justification were analyzed to address this question.
+
+*RQ 1.2: What are the design requirements for a miscitation detection tool, and what form should it take?*
+
+The second subquestion addresses the design and functioning of the tool itself. Design requirements for citeguard were derived from survey input from researchers, yielding three guiding principles: minimum effort, constructive framing, and transparent community moderation. The resulting tool consists of three components: a reporter application for submitting miscitation reports, a publicly accessible version-controlled database, and a checker that cross-references a paper's citations against the database.
+
+*RQ 1.3: How would the scientific community respond to this software, and how can we make sure that it will be adopted and effectively used?*
+
+The third subquestion focuses on researcher input: what are researchers' existing attitudes toward miscitations, what are their preferences regarding the tool's design, who they believe should be responsible for identifying and correcting miscitations, and under what conditions they would be willing to adopt such a tool? Researchers who had recently published in the social sciences were surveyed to address this question.
+
+Together, the three subquestions guide the development of citeguard. Each question also contributes knowledge that has value independently of the tool. The operationalization of miscitation types provides a framework to inform future research on miscitations. The survey findings offer insight into researcher attitudes toward miscitations. The design requirements offer a model for how citation checkers or similar integrity tools might be developed.
+
+# Operationalization and definition of miscitations
+
+Addressing miscitations first requires a clear and consistent definition of what constitutes one. This section describes how miscitations were identified and categorized across two datasets: a set of citations to empirical papers published in Psychological Science, and a set of citations to a methodological paper on sample size justifications. The goal was to develop a taxonomy of miscitation types broad and specific enough to capture the range of errors that occur in practice, and help classify them.
+
+## Coding procedure
+
+
+### Part 1: *Psychological Science* papers (PsychSci)
+
+Citations in the PsychSci dataset were coded by Mink Veltman (MV), a master's student in Human-Technology Interaction at Eindhoven University of Technology (TU/e), with a background in social sciences, and its research methods but without domain expertise in any of the specific research areas covered by the sampled papers. For the first step of the operationalization of miscitations, eight papers published in Psychological Science were randomly sampled for citation analysis. For each target paper, ten citing works were collected by exporting full citation records from Web of Science filtered on the field of psychology. Papers were randomly drawn, and citing works were only included if they met two additional criteria: the citing paper did not share any authors with the target paper, and it was a journal article rather than a book, book chapter or conference proceeding. Three works were excluded due to inaccessible full text (n = 2) or an orphan citation (n = 1), leaving 77 citations to eight target papers available for analysis.
+
+Before rating individual citations, the eight target papers were read in full, with particular attention to the methods, results, and discussion sections. For each citation to the target papers, the 2-3 sentences surrounding the in-text citation were examined. For nested citations making multiple claims in one sentence, all the separate claims were extracted. The identified claims were compared against the original source and a citation was rated as incorrect if the citing sentence attributed a claim to the source that was not supported by, or contradicted the source's actual findings. Textual explanations were provided to describe the issue of all identified cases of miscitations. These descriptions informed the taxonomy of possible citation mistakes that is used to categorize miscitations in the software solution. The procedure is summarized in @fig-psychsci-coding.
+
+```{r}
+#| label: fig-psychsci-coding
+#| fig-cap: "Flowchart of the PsychSci citation coding procedure"
+#| fig-align: center
+#| out-width: "75%"
+#| message: false
+library(DiagrammeR)
+library(DiagrammeRsvg)
+library(rsvg)
+
+graph <- grViz('
+digraph psychsci_coding {
+  graph [layout = dot, rankdir = TB, fontname = "Helvetica"]
+  node [fontname = "Helvetica", fontsize = 11]
+
+  target    [label = "Target paper",                                              shape = oval,      style = filled, fillcolor = "#D9EAD3"]
+  citing    [label = "Citing paper",                                              shape = oval,      style = filled, fillcolor = "#D9EAD3"]
+  readpaper [label = "Read in full\n(methods, results, discussion)",              shape = rectangle]
+  extract   [label = "Extract 2–3 sentences\naround in-text citation",            shape = rectangle]
+  nested    [label = "Multiple claims\nin one sentence?",                          shape = diamond,   style = filled, fillcolor = "#FFF2CC"]
+  split     [label = "Extract each claim\nseparately",                            shape = rectangle]
+  compare   [label = "Compare claim against\noriginal findings",                  shape = rectangle]
+  match     [label = "Claim supported\nby original?",                             shape = diamond,   style = filled, fillcolor = "#FFF2CC"]
+  correct   [label = "Correct",                                                   shape = oval,      style = filled, fillcolor = "#D9EAD3"]
+  incorrect [label = "Incorrect",                                                 shape = oval,      style = filled, fillcolor = "#F4CCCC"]
+  explain   [label = "Provide textual\nexplanation",                              shape = rectangle]
+  taxonomy  [label = "Informs\ntaxonomy",                                        shape = oval,      style = filled, fillcolor = "#CFE2F3"]
+
+  { rank = same; target; citing }
+
+  target    -> readpaper
+  citing    -> extract
+  extract   -> nested
+  nested    -> split    [label = "Yes"]
+  nested    -> compare  [label = "No"]
+  split     -> compare
+  readpaper -> compare
+  compare   -> match
+  match     -> correct  [label = "Yes"]
+  match     -> incorrect[label = "No"]
+  incorrect -> explain
+  explain   -> taxonomy
+}
+')
+
+svg_file <- tempfile(fileext = ".svg")
+writeLines(export_svg(graph), svg_file)
+rsvg::rsvg_png(svg_file, "flowchart_psychsci_coding.png", width = 1400)
+knitr::include_graphics("flowchart_psychsci_coding.png")
+```
+
+### Part 2: Sample size justification paper (SSJ)
+
+Citations to Lakens' paper on sample size justification [@lakens2022] were analyzed for three reasons: the author had prior suspicions of miscitations of this paper, the author's expertise was available to serve as an expert rater, and methodological papers may be miscited differently than empirical works. Citing works were randomly sampled from an export of the 1000 most recent citations on Web of Science [@webofscience]. The first 20 citations were rated by DL (Daniël Lakens, professor at TU/e and author of the paper under analysis). An additional 57 citations were subsequently double-coded by both raters independently. Coding was performed in separate files to prevent raters from being influenced by each other's judgments. The coding procedure followed the same steps as the PsychSci dataset. However, because the target paper is methodological, rather than an empirical study, the evaluation criterion extended beyond verifying factual claims: citations were also assessed for whether the methodological advice given in the paper was actually applied or accurately represented in the citing work. Citations were rated as correct or incorrect, with textual explanations provided for identified miscitations.
+
+## Results from coding miscitations
+
+In this section, the findings from both coding procedures are presented. For the SSJ dataset, inter-rater reliability was calculated as this dataset was double coded by the content expert and a non-expert. The identified cases were categorized into ten miscitation types, presented in Table `\ref{taxonomy-types}`{=latex}. Each paragraph below describes one type as it appeared in the data.
+
+### Psychological Science dataset
+
+Compared to Cobb et al.'s [-@cobb_problem_2024] findings of 9.5% fully inaccurate, and 9.3% somewhat inaccurate citations, we found 11 out of 77 (14%) of citations to be incorrect. An additional 6 citations had less significant issues, leading to a total of 17 out of 77 citations (22%) with issues.
+
+**Direct contradiction (M1).** Some citing authors completely reversed the finding of the original paper, citing it as evidence that was the exact opposite of what the study showed. One citing paper described high-rank speakers as having lower and more monotone pitch, when the original study on vocal cues and hierarchical rank found pitch to be significantly higher in the high-rank condition (see Appendix, case 3009-6).
+
+**Non-existent finding (M2).** In some cases the cited claim did not correspond to any result in the source. One example cited a study on shame and recidivism as evidence that high-shame individuals have a fragile sense of self-worth which did not appear in the original study (see Appendix, 8790-11).
+
+**Non-significant result (M3)**. Somewhat related to M2, one error involved presenting a non-significant result as if it were a meaningful finding. The same study on vocal cues and hierarchical rank found no significant difference in loudness between conditions. A citing paper nonetheless attributed to it the claim that "talkers will lower their voice when they want to be perceived as powerful". If interpreted as referring to loudness, it treats an effect for which no evidence was found (p\>0.05) as established by the study. (see Appendix, case 3009-9)
+
+**Population overgeneralization (M4).** One case involved citing a finding generalizing it to a general adult population when the original study found the effect only in adolescents. The citing paper included the source in a list of studies without noting this restriction (see Appendix, case 5645-2).
+
+**Causal distortion (M5).** Another error involved reversing the direction of a causal claim rather than the finding itself. A study on reading comprehension found that preventing readers from regressing lowered comprehension. A citing paper claimed fewer regressions being a display of poor comprehension, effectively reversing the causal relation (see Appendix, case 1148-10).
+
+**Independent and dependent variable misrepresentation and construct inflation (M6, M7, M8).** The most common issue in this dataset was the misrepresentation of variables that were actually manipulated or measured. In one example, a study on forgiveness and forgetting was cited as showing that individuals with greater cognitive control reduce rumination. Neither cognitive control nor rumination were variables that appeared in the original study (see Appendix, case 1602-4). In another, a study that used monetary rewards as its manipulation was cited as evidence about "strong emotional context during social reinforcement learning" changing the actual independent variable into a broader construct without justification (see Appendix, case 5645-6). In another paper a study on forgiveness and forgetting was cited as evidence that forgiveness maintains social relationships and enables people to move forward, but neither of these measures were outcome variables of the original study (see Appendix, case 1602-8).
+
+### Sample Size Justification dataset
+
+The sample size justification (SSJ) dataset differs from the PsychSci dataset as it only contains the citations to one specific methodological paper. Of the 77 analyzed citations, 23 (30%) were identified as incorrect; roughly twice the error rate found in the PsychSci dataset.
+
+**Incomplete citation (M9).** The most common error in the citations to the SSJ paper was invoking a recommendation without completing the steps it requires. Resource constraints were frequently cited as a sample size justification without the necessary follow-up sensitivity analysis or smallest-effect-size reasoning that Lakens specifies as necessary to show the sample is still informative. One paper wrote "sample size was determined based on available funding" with no further justification (see Appendix, case 19). Another case stated "the sample size was constrained by resources and availability of athletes" (see Appendix, case 16). In these cases, the citation to the SSJ paper is unwarranted by omitting the further reasoning to complete the justification that the paper explicitly requires.
+
+**Non-existent finding (M2) and non-contextualized (AI) citation (M10).** Several citations attributed claims to Lakens that do not appear in the source (M2), or were too vague to be traced to any particular recommendation (M10). Several papers used the SSJ paper to support claims of arbitrary sample sizes as being adequate. One paper attributed the claim that "a sample size of 30 has become a widely accepted guideline in many research fields" to Lakens (2022). The paper does not contain statements like these, and actively argues against using arbitrary unjustified sample sizes. Another paper described a sample of 401 as "considered apt for statistical analyses" with no basis for that number in the cited work. One case applied the paper to machine learning attributing that "predictive modeling does not adhere to rigid sample size requirements" to the SSJ paper which makes no reference to predictive modeling. Suspicions of AI-generated content were raised for several cases, as the attributed claims did not appear to have any recognizable relationship to anything in the cited paper. [^1]
+
+[^1]: The fact that suspected AI-generated miscitations appeared only in the SSJ and not in the PsychSci dataset can likely be explained by the recency of the articles. The SSJ dataset contained papers from 2023 onwards, many of which date from 2025, a period during which AI writing assistants became increasingly prevalent in academic publishing.
+
+### Taxonomy of miscitation types
+
+
+Ten miscitation types were identified across the two datasets. Table `\ref{taxonomy-types}`{=latex} presents the full taxonomy. Eight types (M1-M8) emerged from the PsychSci dataset. They describe cases where a cited claim contradicts, exaggerates, or otherwise misrepresents the source's findings. Two further types (M9-M10) specifically emerged from the SSJ dataset, concerning cases where a citation is applied incompletely or without sufficient relation to the source's actual contents. Together the ten types provide a categorization of miscitations that allows us to classify errors.
+
+```{=latex}
+\begin{longtable}{p{0.08\textwidth} p{0.65\textwidth} p{0.19\textwidth}}
+\caption{Taxonomy of miscitation types}\label{taxonomy-types}\\
+\toprule
+Code & Description & Dataset \\
+\midrule
+\endfirsthead
+\multicolumn{3}{l}{\textit{Table \thetable{} continued}}\\
+\toprule
+Code & Description & Dataset \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+M1 & Direct contradiction: the cited claim directly contradicts or reverses the findings of the source & PsychSci \\[4pt]
+M2 & Non-existent finding: the described result or claim does not appear in the source & PsychSci, SSJ \\[4pt]
+M3 & Non-significant result: a statistically non-significant result is presented as meaningful & PsychSci \\[4pt]
+M4 & Population overgeneralization: findings from a specific group are attributed to a broader population & PsychSci \\[4pt]
+M5 & Causal distortion: a causal relationship is reversed or made ambiguous relative to the source & PsychSci \\[4pt]
+M6 & Independent variable misrepresentation: the manipulation or independent variable is incorrectly described & PsychSci \\[4pt]
+M7 & Dependent variable misrepresentation: the outcome variable or findings are distorted or incorrectly described & PsychSci \\[4pt]
+M8 & Unjustified construct inflation: cited findings are generalized to a broader construct without justification & PsychSci \\[4pt]
+M9 & Incomplete citation: a recommendation is cited without the required follow-through, including cases used to legitimize inadequate methodology & SSJ \\[4pt]
+M10 & Non-contextualized citation: citation is too vague or general to be traced to specific content in the source & SSJ \\
+\end{longtable}
+```
+
+A detailed per-case description of the identified miscitations can be found in the appendices.
+
+### Inter-rater reliability
+
+Calculating inter-rater agreement provides an indication of whether non-expert raters can reliably identify miscitations of papers they have read. `r nrow(excluded)` row(s) were excluded from the analysis because MV indicated insufficient confidence to provide a reliable rating. Agreement was assessed on the remaining `r n` rated pairs using Cohen's unweighted kappa. Exact agreement was `r sum(analyzable$match)`/`r n` (`r sprintf("%.1f", pct)`%). Cohen's kappa was *κ* = `r sprintf("%.3f", k)` (95% CI \[`r sprintf("%.3f", k - 1.96*se)`, `r sprintf("%.3f", k + 1.96*se)`\]), *z* = `r sprintf("%.2f", z)`, *p* `r ifelse(p < .001, "< .001", sprintf("= %.3f", p))`, indicating `r interpret_kappa(k)` agreement. This agreement calculation excludes the two rows that were not coded by MV, but still indicates high inter-rater reliability and suggests that, aside from the original author, critical readers (non-expert) could also be allowed to submit miscitations of papers they have read.
+
+# User Study - Survey
+
+To address RQ1.3, an online survey was administered to researchers who had recently published in social science, and Daniël Lakens' social media audience. The population of actively publishing researchers was chosen because they are both the primary producers of citations, and the intended users of a miscitation detection tool. The social media audience was recruited because of the lower-than-anticipated response rate in the publishing researchers sample. The survey covered three broad topics: researchers' awareness of and attitudes toward miscitations in the scientific literature, their willingness to contribute to and engage with a database of miscitations, and their preferences regarding the tool's design and utilization.
+
+## Methods
+
+### Participants
+
+The first set of participants were authors who have recently published an article in a list of journals covering psychology, sociology, political science, economics, communication, education, criminology, demography, and anthropology. E-mail addresses of participants were collected via the OpenAlex API [@priem]. `r n_total_unique` unique addresses were collected and participants were e-mailed in batches of around 100 (minus some deduplication, and removal of institutional addresses), using the BCC field. Prior to sending each batch, non-personal addresses (e.g., library support inboxes, open-access repository addresses, and publications offices) were manually identified and removed. Batch 1 contained `r batch_unique[1]` unique addresses after deduplication, of which `r n_removed["1"]` were removed, leaving `r batch_unique[1] - n_removed["1"]`. Batch 2 contained `r batch_unique[2]` unique addresses, of which `r n_removed["2"]` were removed, leaving `r batch_unique[2] - n_removed["2"]`. Batch 3 contained `r batch_unique[3]` unique addresses, of which `r n_removed["3"]` were removed, leaving `r batch_unique[3] - n_removed["3"]`. Batch 4 contained `r batch_unique[4]` unique addresses after deduplication, of which `r n_removed["4"]` were removed, leaving `r batch_unique[4] - n_removed["4"]`. Batch 5 contained `r batch_unique[5]` unique addresses, of which `r n_removed["5"]` were removed, leaving `r batch_unique[5] - n_removed["5"]`. Batch 6 contained `r batch_unique[6]` unique addresses, of which `r n_removed["6"]` were removed, leaving `r batch_unique[6] - n_removed["6"]`. Unfortunately, out of 488 delivered e-mail, only 14 participants responded.
+
+Since the response rate to the e-mailed survey was low, a second participant sample was recruited. The second sample was recruited by Daniël Lakens, using social media channels to share the link (LinkedIn, Mastodon, bluesky, X). This yielded a far greater number of responses. 125 people responded to the call to participate on social media.
+
+### Materials
+
+The survey consisted of four sections and was administered online via Microsoft Forms. The full survey is reproduced in Appendix B. The first section assessed awareness and personal experience with miscitations. Participants indicated whether they had ever found miscitations of their own work, and how concerned they were about miscitations in scientific literature. They also indicated how responsible they considered each of four stakeholder groups (authors, reviewers, journal editors, readers) for preventing miscitations.
+
+The second section focused on attitudes toward the proposed software solution. Before answering, participants read a brief text summarizing the prevalence of citation errors in the literature and describing the proposed database-based solution. They were then asked how willing they themselves would be to submit a miscitation report to the database, and how willing they expected other researchers in their field to be. Each closed-ended item in this section was followed by an open text field for participants to explain their answer.
+
+The third section addressed the design of the submission system. Participants were asked whether open submissions by any reader should be allowed, or whether only the original author should be allowed to submit miscitation reports to their papers. Participants were asked in an open-ended question format how potential conflicts between competing miscitation reports could be resolved. Finally, the participants were asked to rate how supportive they would be of different parties (authors, reviewers, journal editors, peers) using the tool. As in section 2, each closed-ended item was followed by an open text field for participants to explain their answer. A final open-ended item invited any additional recommendations or concerns.
+
+### Procedure
+
+Responses to closed-ended items were summarized using descriptive statistics. Responses to open-ended items were analyzed thematically by Mink Veltman (MV). The approach was inductive and data-driven: no predetermined coding scheme was applied. All responses to the given items were read to get an overview of the range of answers. Individual responses were then coded by identifying the core idea expressed. Codes that referred to the same underlying idea were grouped together in themes. Where a single response expressed multiple distinct ideas, it was assigned to each corresponding theme. Responses that did not directly address the question, such as tangential remarks or clarifications, were excluded from the thematic analysis, but remain available in the full dataset.
+
+### Difference between participant samples
+
+A drawback of the second sampling strategy is that we cannot be completely sure who responded to the survey, and whether Lakens' followers are perhaps predisposed toward metascientific problems and solutions like this compared to the more representative e-mail sample. We decided to keep the descriptive statistics separate, but open answers were combined as they did not meaningfully differ between samples.
+
+## Results
+
+### Awareness and experience of miscitations
+
+Two samples were collected: `r n_resp` responses from the email sample and `r n_daniel` from a link shared by Lakens on social media (Lakens audience). @tbl-q1-q2 shows how many participants had previously found miscitations of their own work and the distribution of concern ratings. Both samples reported moderate concern (email sample: (*M* = `r sprintf("%.2f", mean(survey$q2_n, na.rm = TRUE))`, *SD* = `r sprintf("%.2f", sd(survey$q2_n, na.rm = TRUE))`) Lakens audience: (*M* = `r sprintf("%.2f", mean(daniel$q2_n, na.rm = TRUE))`, *SD* = `r sprintf("%.2f", sd(daniel$q2_n, na.rm = TRUE))`)). Responsibility for preventing miscitations was rated per stakeholder group on a 5-point scale (1 = not at all responsible, 5 = fully responsible).
+
+```{r}
+#| label: tbl-q1-q2
+#| tbl-cap: "Q1–Q2: Miscitation experience and concern level by sample"
+#| tbl-pos: "H"
+q1_levels <- c("Yes, on multiple occasions", "Yes, once", "No",
+                "I have never checked for miscitations")
+concern_order <- c("very unconcerned", "somewhat unconcerned",
+                   "neither concerned nor unconcerned",
+                   "somewhat concerned", "very concerned")
+
+q1_tbl <- both_smp |>
+  mutate(q1_found = factor(q1_found, levels = q1_levels)) |>
+  count(smp, q1_found, .drop = FALSE) |>
+  pivot_wider(names_from = smp, values_from = n, values_fill = 0) |>
+  rename(Response = q1_found)
+
+q2_tbl <- both_smp |>
+  mutate(q2_concern = factor(tolower(q2_concern), levels = concern_order)) |>
+  count(smp, q2_concern, .drop = FALSE) |>
+  pivot_wider(names_from = smp, values_from = n, values_fill = 0) |>
+  rename(Response = q2_concern)
+
+bind_rows(q1_tbl, q2_tbl) |>
+  kable() |>
+  pack_rows("Q1: Have you ever found miscitations of your own work?", 1, nrow(q1_tbl)) |>
+  pack_rows("Q2: How concerned are you about miscitations?", nrow(q1_tbl) + 1, nrow(q1_tbl) + nrow(q2_tbl))
+```
+
+```{r}
+#| label: fig-resp-comparison
+#| fig-cap: "Perceived responsibility per stakeholder by sample (mean ± 95% CI). Email sample n = 14, Lakens audience n = 125."
+#| fig-width: 5.5
+#| fig-height: 3.2
+#| out-width: "100%"
+mean_ci_smp(both_smp,
+  cols   = c("q3_authors_n","q3_reviewers_n","q3_editors_n","q3_readers_n"),
+  labels = c("Authors","Reviewers","Journal editors","Readers"),
+  title  = "Q3: Perceived responsibility")
+```
+
+Across both samples, the majority of respondents reported having found miscitations of their own work at least once. Most participants were at least somewhat concerned about miscitations in the scientific literature. Perceived responsibility for preventing miscitations followed the same rank order in both samples: authors were rated most responsible, followed by journal editors, then reviewers, with readers assigned the least responsibility. Across both samples combined, `r sum(both_smp$q1_found == "I have never checked for miscitations", na.rm = TRUE)` out of `r nrow(both_smp)` respondents (`r sprintf("%.0f", 100 * sum(both_smp$q1_found == "I have never checked for miscitations", na.rm = TRUE) / nrow(both_smp))`%) indicated they had never checked for miscitations of their own work, indicating room for improvement in awareness of the issue (see @tbl-q1-q2).
+
+### Willingness to submit miscitations
+
+Participants rated their own willingness to submit a miscitation report on a 5-point scale (email sample: *M* = `r sprintf("%.2f", mean(survey$q4_n, na.rm = TRUE))`, *SD* = `r sprintf("%.2f", sd(survey$q4_n, na.rm = TRUE))`; Lakens audience: *M* = `r sprintf("%.2f", mean(daniel$q4_n, na.rm = TRUE))`, *SD* = `r sprintf("%.2f", sd(daniel$q4_n, na.rm = TRUE))`), and estimated other researchers' willingness (email sample: *M* = `r sprintf("%.2f", mean(survey$q6_n, na.rm = TRUE))`, *SD* = `r sprintf("%.2f", sd(survey$q6_n, na.rm = TRUE))`; Lakens audience: *M* = `r sprintf("%.2f", mean(daniel$q6_n, na.rm = TRUE))`, *SD* = `r sprintf("%.2f", sd(daniel$q6_n, na.rm = TRUE))`).
+
+```{r}
+#| label: fig-willingness
+#| fig-cap: "Q4/Q6: Distribution of willingness to submit a miscitation report (self vs. others) by sample."
+#| fig-width: 7.0
+#| fig-height: 3.5
+#| out-width: "100%"
+willingness_order <- c("Very unwilling", "Unwilling", "Neutral", "Willing", "Very willing")
+
+bind_rows(
+  both_smp |> filter(!is.na(q4_self)) |>
+    mutate(item = "Self (Q4)", response = factor(q4_self, levels = willingness_order)),
+  both_smp |> filter(!is.na(q6_others)) |>
+    mutate(item = "Others (Q6)", response = factor(q6_others, levels = willingness_order))
+) |>
+  mutate(item = factor(item, levels = c("Self (Q4)", "Others (Q6)"))) |>
+  count(smp, item, response, .drop = FALSE) |>
+  group_by(smp, item) |>
+  mutate(pct = n / sum(n) * 100) |>
+  ggplot(aes(x = response, y = pct, fill = smp)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  facet_wrap(~item) +
+  scale_fill_manual(values = smp_cols) +
+  scale_x_discrete(labels = \(x) str_wrap(x, width = 8)) +
+  labs(x = NULL, y = "%", fill = NULL) +
+  theme_minimal(base_size = 8) +
+  theme(legend.position = "top",
+        legend.text = element_text(size = 7),
+        legend.key.size = unit(0.3, "cm"),
+        axis.text.x = element_text(size = 6))
+```
+
+Respondents appear to be moderately willing to report to a database, and expect others to be moderately willing as well. However, a significant number of respondents indicated unwillingness for both themselves and others. Answers to the follow-up open question to explain their answers gave more detailed insight into the reasons why people might be willing or unwilling.
+
+#### Themes emerged from open-ended questions about willingness to report
+
+Four major themes emerged from the responses about willingness to report.
+
+##### Enthusiasm and supportive response
+
+Enthusiasm and support for submitting was expressed in several ways by `r count_quotes("Enthusiasm / supportive", "Optimistic / shared enthusiasm")` responses, expressing that it would not be too time consuming (2), and in general always being positive towards research integrity initiatives (1). Two responses are highlighted here as illustrative examples:
+
+> “I never hoped for my work to be misunderstood, and having an inflated number of citations of my work because of this feels wrong (although beneficial to my career that I hope is not built on motivated reasoning)”
+
+> “Great idea and I hope these databases can surface insights for readers AS they are reading a paper in Zotero or similar programs”
+
+##### Effort and ease of use
+
+The next theme to emerge was a more conditional one `r count_quotes("Effort and ease of use", "Effort and discoverability as key barriers")` responses expressed their concerns about the ease of use, and discoverability of the database. Most responses indicate that for the database to be utilized by them, and others, the process has to be maximally streamlined and submitting should be as easy as possible. Others note that the tool has to be easy to find to get people to adopt it as well.
+
+> “It would need to be fairly straightforward and not require a lot of time.”
+
+> “If it’s easy or semi automated I would”
+
+> “I would assume other researchers to have the same motivation as me; similarly stressed and occupied with other tasks. If the tool is quick and easy to find, it might help for reporting”
+
+> “They would be willing to do so if they know such a database exists. I don’t think many of them will search for such a tool when they come across a miscitation. Publicity is the key.”
+
+##### Time constraints
+
+`r count_quotes("Time constraints")` responses mentioned time constraints as a barrier to submitting. Indicating that workload for researchers is already high, time is limited and with a high number of publications in their backlog it can be too time consuming to report everything.
+
+> “I worry people will say they don’t have time.”
+
+> “Now that I have 100+ papers published, this will be a big task - in the beginning. But I’ll still do it. But oof.”
+
+> “Willing, I want to prevent it in the future, but lack of time/workload is also real, which is why I say neutral”
+
+##### Moral hesitancy / fear of consequences
+
+`r count_quotes("Moral hesitancy / fear of consequences", "Moral hesitancy")` noted moral hesitancy and fear of consequences for them, or others as a barrier to reporting. Some reported fear of harming the reputation of an author who may have miscited accidentally, others reported fear of retaliation from the misciting author. Several responses noted that anonymity would be a prerequisite for participation. Finally, some responses indicated that a punitive framing of the database would make them less comfortable participating, preferring a more constructive and clarifying approach.
+
+> "It would feel like tattling on the other person. Maybe it was an honest mistake or lack of understanding. There is a fine line between intentional miscitation and mix-ups (if you read a lot), or lack of understanding (maybe not a native speaker). While I don't want to excuse it, I also don't want to publicly humiliate someone for a potentially honest mistake."
+
+> "Fear of indirect ramification. If someone was citing my work, they are likely in my field. Reporting them for misciting my work may have ramifications (provided they know I reported them)."
+
+> "I would be more willing to do it if the process and database were designed in a positive or neutral context rather than a punitive one. \[...\] A system focused on correction, clarification, and constructive improvement rather than blame would make me more comfortable participating."
+
+Several smaller themes also emerged. A number of respondents noted low incentives to report, pointing out that citations still benefit an authors citation count and career metrics; even if those citations are inaccurate. Some expressed general doubt about the importance of the problem of citation accuracy. A severity threshold was mentioned by some, indicating that they would only report egregious miscitations.
+
+### Support for open submissions
+
+```{r}
+#| label: fig-q8
+#| fig-cap: "Q8: Should any reader be allowed to submit miscitations to the database? Response distribution by sample."
+#| fig-width: 5.5
+#| fig-height: 3.2
+#| out-width: "100%"
+both_smp |>
+  filter(!is.na(q8_open_sub)) |>
+  count(smp, q8_open_sub) |>
+  group_by(smp) |>
+  mutate(pct = n / sum(n) * 100) |>
+  ggplot(aes(x = q8_open_sub, y = pct, fill = smp)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = smp_cols) +
+  scale_x_discrete(labels = \(x) str_wrap(x, width = 15)) +
+  labs(x = NULL, y = "%", fill = NULL) +
+  theme_minimal(base_size = 8) +
+  theme(legend.position = "top",
+        legend.text = element_text(size = 7),
+        legend.key.size = unit(0.3, "cm"))
+```
+
+A majority of respondents across both samples indicated it should be possible to allow any reader to submit miscitation reports. Nevertheless, a large portion of respondents still report having concerns. Answers to the open-ended part of this question can give more insight into the reasons why or why not.
+
+#### Themes emerged from open-ended questions about open submissions
+
+##### Weaponisation and bad actors
+
+One of the most prominent concerns about open submissions was the potential for weaponisation by bad actors, raised by `r count_quotes("Weaponisation / bad actors")` respondents. The respondents worry about the database being used for gaming the system, and bad-faith submissions used to target authors and discredit them, or undermine their citation counts.
+
+> “Might be used for scientific warfare.”
+
+> “In areas where there is ‘controversy’ research people will input wrongful things to mess with the research. \[…\] I believe that any reader should be allowed, ONLY if there is some kind of moderation or ‘vote’ system.”
+
+> “I think it should be allowed, but people will likely weaponize it to harm people also publishing in their fields. Getting a professorship depends a lot on reputation and citations and there are quite a few people who game the system already.”
+
+> “I have concerns about readers who don’t fully understand the original study flagging miscitations. I also have concerns about people motivated by personal animus or professional rivalry trying to undermine each other’s citation counts.”
+
+##### Quality control, accountability, and reader expertise
+
+`r count_quotes("Quality control and accountability", "Reader expertise limitations")` respondents raised concerns about quality control, accountability, and whether readers have sufficient expertise to reliably identify miscitations.
+
+> “Who guarantees that the reader actually knows what they’re talking about”
+
+> “It’s possible that another reader could misinterpret the work too or believe something is a misinterpretation / miscitation when it isn’t. It may make more sense for authors to clarify their own work for consistency’s sake.”
+
+> “It can get messy really quickly. What if the original authors would think the citation is correct? Then we would need to correct corrections ad infinity”
+
+##### Definitional ambiguity
+
+`r count_quotes("Definitional ambiguity")` respondents raised concerns about the ambiguity of what constitutes a miscitation and stressed the importance of clear guidelines.
+
+> “It depends a lot on how the database works and what constitutes a miscitation. \[…\] Maybe if rules were set in what constitutes a miscitation then anyone should be able to contribute.”
+
+> “I think miscitations is a vague term that is not clearly defined.”
+
+> “Authors may cite a paper with a specific objective in mind, not always with the scope of backing a factual claim. Sometimes it is difficult to reconstruct the scope of a citation from a text, and nuances may be lost in the writing process due to limited word count. There are also situations in which authors must deal with reviewers who demand that their work be cited, which may paradoxically lead to incorrect citations.”
+
+#### Resolving conflicts
+
+Participants were asked how to resolve conflicts between competing miscitation submissions if open submissions were allowed. They were prompted with three example approaches: peer voting, editorial review, and author privilege. A common view, expressed by `r count_quotes("Multi-step / hybrid approaches")` respondents, was that a hybrid or multi-step process would work best, typically starting with author privilege and escalating to editorial review or peer voting if authors were unavailable or unresponsive. Author privilege as the primary mechanism was endorsed by `r count_quotes("Author privilege preferred")` respondents, who generally felt the cited paper's authors should have the final say on interpretation of their own work. Editorial review was preferred by `r count_quotes("Editorial review preferred")` respondents as the most reliable and clean solution, while peer voting was favored by `r count_quotes("Peer voting preferred")` as a more scalable alternative. `r count_quotes("All approaches acceptable")` respondents found all three suggested approaches acceptable. `r count_quotes("Against author privilege")` respondents specifically argued against author privilege due to potential conflicts of interest. Concerns about the feasibility of conflict resolution mechanisms and the risk of abuse or bias were raised by `r count_quotes("Concerns about feasibility and abuse")` respondents. Another 2 respondents noted that conflicts do not necessarily need to be resolved as long as the discussion is presented transparently.
+
+> “Peer voting depends on high-volume traffic to the platform and database, achievable at launch, but difficult to maintain over time. Editorial review offers a good option but it relies on voluntary effort that is increasingly delegated to AI tools, with uncertain consequences for review quality.”
+>
+> “People should be able to comment (like on PubPeer) and it should be clear who (e.g. reader vs author) provides which report. Conflicts don’t necessarily need to be resolved, but there should be a transparent discussion” 
+>
+> “Combination of author privilege and editorial review. Peer voting might end up with this essentially feeling like a Yelp or Reddit for popular and unpopular scientific topics.”
+
+### Support for adoption
+
+Support for different parties using the tool to detect miscitations was rated on a 5-point scale (1 = strongly oppose, 5 = strongly support). @fig-support-comparison shows the ratings. Support for authors, reviewers and journal editors is approximately equal. Support for peers offering post-publication critique is slightly lower.
+
+```{r}
+#| label: fig-support-comparison
+#| fig-cap: "Support for parties using the tool by sample (mean ± 95% CI). Email sample n = 14, Lakens audience n = 125."
+#| fig-width: 5.5
+#| fig-height: 3.2
+#| out-width: "100%"
+mean_ci_smp(both_smp,
+  cols   = c("q11_authors_n","q11_reviewers_n","q11_editors_n","q11_peers_n"),
+  labels = c("Authors (writing)","Reviewers","Journal editors","Peers (post-pub)"),
+  title  = "Q11: Support for parties using the tool")
+```
+
+Participants were asked to explain their support ratings, and several themes emerged. The largest group with `r count_quotes("Broad support — everyone should use it")` respondents expressed broad support for all parties using the tool. `r count_quotes("Prevention focus — support strongest pre-publication")` respondents indicated that their support was strongest for pre-publication use, preferring prevention over post-publication policing. `r count_quotes("Reviewers exempt / reviewer burden concerns")` respondents noted that it should not be the responsibility of reviewers citing concerns about reviewer burden, including that reviewers are unpaid and do not want more work. `r count_quotes("Editors and journals should lead")` respondents felt that journals and editors should take primary responsibility, rather than reviewers. `r count_quotes("Concern about post-publication policing culture")` expressed concern about a policing culture around post-publication criticism.
+
+### Other comments
+
+Several respondents raised concerns about long-term sustainability. A community-driven tool functions only if people continue to contribute. One respondent explicitly worried about the future costs of maintaining a system like this. Two design suggestions that were not captured elsewhere stood out. One respondent proposed that the database should automatically alert corresponding authors and journal editors when a miscitation report is filed. Another hoped the tool could surface warnings automatically within reference managers like Zotero [@zotero]. Both suggestions point toward the same underlying goal to reduce the effort required to discover and use citeguard to prevent miscitations.
+
+One respondent noted that a tool like this could be good to correct common and repeated miscitations but in their view this is just a small share of all miscitations. Other respondents identified some of the concerns that we had already encountered in the process of this project such as the problem of nested citations, and the need to define miscitations in an operational way.
+
+# Software design
+
+This section describes the design and implementation of citeguard, covering the reporter application, the database, and the checker. The design is directly inspired by the survey findings. Three large themes from the survey responses were identified as design requirements: the use of citeguard should require minimum time and effort; the framing should be constructive and prevention-oriented to prevent a policing culture; and the open submissions reflect the majority preference for allowing readers to submit while still privileging the original author's verdict.
+
+## Design requirements
+
+The primary requirement of the tool (and probably any tool) is that use should require minimum effort. Both submitting miscitations to the database, and checking for potential miscitations in a text have to be as straightforward as possible, and require minimal time investments since researchers often indicate already being under considerable workload pressure. Next to ease-of-use, discoverability is required for researchers to start using the tool. A metacheck implementation will make the tool discoverable when it becomes integrated in the metacheck workflow, and people can use the citeguard module alongside the other checks that metacheck provides.
+
+Most respondents supported allowing anyone, and not only the original authors of the cited paper to submit miscitations to the database. However, the open responses also highlighted recommendations to differentiate the weight assigned to submissions based on the submitter's role, and to establish mechanisms for resolving conflicts between competing reports. Some conflicts may never be fully resolved; it is therefore important to keep all submissions visible even when they contradict each other. To help users make sense of competing reports, differential weight can be assigned to submissions through author privilege and peer voting. An original author's submission will hold the most evidentiary weight, while other submissions can be upvoted and downvoted by readers. The current implementation records the reporter's role per submission in the database, providing the basis for this weighting. A peer voting interface has not yet been implemented but is a planned feature. Peer voting is not without its own limitations, however. Votes from readers may not always reliably distinguish genuine errors from disagreements about interpretations, and coordinated voting by ill-intending parties could manipulate the evidentiary weight assigned to a report.
+
+Participants indicated that they prefer not to create too much of a policing culture. The design of the tool should be focused on constructive and preventative warnings and the database should be interpreted as a way to warn for preventing future mistakes rather than a record for holding authors accountable for past ones. Honest mistakes happen and the goal is not to punish authors for miscitations in the past but help prevent the same mistakes in the future. Support for the tool was strongest for pre-publication use cases; authors checking their own citations while writing, and reviewers checking submitted manuscripts. Support for post-publication critique was lower, reflecting concerns about a policing culture. The design should therefore emphasize the tool's role as a prevention mechanism rather than a platform for retrospective criticism.
+
+## Reporter application
+
+The reporter application is a web form through which users can submit miscitation reports to the citeguard database. The form collects the minimum information needed to create a database record: the reporter's role (author of the cited work, co-author, reader, or other), the DOI of the cited paper, the DOI of the citing paper (optional; omitting it allows submitting a general warning about how a paper is commonly miscited), the (paraphrased) citation text, a free-text explanation of the error, one or more miscitation type codes drawn from the taxonomy, and advice on how the paper should be cited instead. Several of the entries are optional to allow flexibility in the way that people submit to the database. For example, it is possible to include recommendations on how a paper should be cited without connecting it to a particular identified mistake.
+
+Anonymity of the reporter is preserved by default: the reporter's identity is not displayed in the public database entry unless they choose to include their ORCID to distinguish their author-submitted report from reader-submitted ones. This addresses the concern raised by survey respondents about the risk of retaliation. The trade-off is that anonymous reader submissions may carry less evidentiary weight. @fig-reporter shows the reporter application interface.
+
+```{r}
+#| label: fig-reporter
+#| fig-cap: "The citeguard reporter application. The left panel collects submission details; the right panel displays the taxonomy as a reference while filling out the form."
+#| fig-align: center
+#| out-width: "100%"
+knitr::include_graphics("images/reporter-app.png")
+```
+
+## Database
+
+The database is implemented as a version-controlled, publicly accessible CSV on GitHub ([mink-veltman/citeguard-data](https://github.com/mink-veltman/citeguard-data)). The database is synced automatically following every submission using the GitHub API. Each row records a miscitation report, ideally identified by two DOIs: the cited paper and the citing paper(s) in which the miscitation appears. When multiple reporters target the same DOI pair, the reports are merged into the existing row. Every record stores the submission timestamp, reporter role (author or reader), optional reporter ORCID, miscitation type codes, quoted or paraphrased citation text and a free-text explanation of the error, and the option supplemental citing advice. Since the majority of survey respondents expressed that the original authors' verdict should be prioritized over peer submissions, the database records the reporter's role (author, co-author, reader, or other) per submission to support this prioritization.
+
+## Checker application
+
+The checker could eventually be implemented as a module within metacheck, and is also available as a standalone Shiny app. It accepts one or more papers in PDF format. Each paper is first sent to a GROBID instance (either ran locally, or using a server), which parses PDF documents into XML and extracts in-text citations. For each extracted citation, the checker retrieves a ±10-sentence window of surrounding text to provide context for any warnings that are generated.
+
+Each citation is matched against entries in the citeguard database. Since citations to the same source can vary through typos, version differences (e.g. preprint vs. published), or missing authors, no single field reliably identifies a match. Matching uses three explicit conditions that must be satisfied, summarized in @tbl-matching. First, the citation must have a strong author match: either an exact match on the author key (the first five normalized last names joined in order) or at least two fuzzy name overlaps across the first three authors. Second, at least one secondary signal must be present: either the publication year is within one year of the database entry, or at least one title token is shared. Title tokens are normalized, lowercase ASCII and filtered against high-frequency terms (e.g., *study*, *effects*, *research*). Either year or title can be missing, but if both are unresolvable, the citation is not flagged.
+
+| Signal | Condition | Role |
+|------------------------|------------------------|:-----------------------|
+| Author key | Exact match on first five normalized last names | Required (author match) |
+| Fuzzy author overlap | ≥2 matched names among first three authors (edit distance ≤1 for names \<8 characters, ≤2 for longer) | Required (author match) |
+| Year | Within one year of database entry | Corroboration |
+| Title token overlap | ≥1 shared token (normalized, stopwords removed) | Corroboration |
+| Year (contradicting) | Both resolvable; differ by more than one year | Veto |
+| Title (contradicting) | Both resolvable; zero shared tokens | Veto |
+
+: Signals used to match citations against the citeguard database. A flag requires an author match and at least one corroborating signal. Either veto suppresses the flag.
+
+When a match is found, the checker presents a warning that names the cited paper, reports the number of independent miscitation reports on record, lists the applicable miscitation type codes, reproduces the stored free-text explanation of the known error, and, where available, provides the submitter's advice on how the source should be cited instead. Author-submitted reports are presented before reader-submitted ones. Warnings are worded constructively: rather than naming who previously miscited the source, the warning describes the type of error and invites the user to verify their own citation against the stored reports.
+
+## System overview
+
+citeguard is formed by three components. The reporter application populates the database with human-identified miscitation reports; the checker draws on this database to flag known errors in new papers. Each new report extends the reach of the checker. When an author or reviewer runs the checker on a manuscript, citeguard extracts all citations from the PDF and matches them against the database. Any citation matching a reported miscitation triggers a warning describing the known error, allowing the user to verify whether their own citation repeats it. The full tool is available at <https://github.com/mink-veltman/citeguard>.
+
+# Discussion
+
+## Key findings
+
+
+We presented citeguard, a software solution to report and prevent miscitations in the scientific literature. The software was designed following analysis of miscitations in psychological scientific literature, and following input from target users. Analysis of citations in two datasets yielded miscitation rates of 14% (11/77) in a sample of *Psychological Science* papers and 30% (23/77) in a sample of citations to a methodological paper on sample size justification. Across both datasets, 10 distinct miscitation types were identified and formalized into a taxonomy (M1–M10), ranging from direct contradictions of findings and invented claims to citations that misuse a source to legitimize inadequate methodology.
+
+The ten miscitation types differ in severity and detectability. Direct contradictions (M1) and non-existent findings (M2) are perhaps the most consequential errors. They completely mislead readers about what a source establishes. Though consequential, these errors are relatively straightforward to detect through careful reading of the source and are unlikely to be contested once identified. Types such as incomplete citations (M9) and non-contextualized citations (M10) might be more insidious because they are harder to detect, and are more likely to lead to genuine disagreement about whether a miscitation has occurred at all. These differences have implications for the design of citeguard. Subjective miscitations types such as M9 and M10 may require additional mechanisms such as author verification or peer voting before a consensus can be reached.
+
+A higher miscitation rate was observed in the SSJ dataset compared to the PsychSci dataset (30% vs. 14%). This difference could follow partly from the differences in coding conditions: the SSJ paper was used as a target because of prior suspicions of miscitations of this paper by the original author, meaning a paper-specific effect cannot be excluded. Without a representative sample of methodological papers we cannot conclude that methodological papers are miscited more, but there might be structural differences between the ways methodological and empirical papers are cited that contribute to the observed differences. Citing empirical findings requires accurately paraphrasing results; citing methodological papers requires demonstrating that the recommended procedure was followed. This creates more opportunity for an incomplete or incorrect application. Methodological papers may also attract a type of strategic citing. Authors may cite methodological papers to signal awareness of best practices, or increase credibility without engaging with the paper. The sample size justification paper revealed many examples of recommendations from the paper being reduced to blanket statements of choices the authors had probably already made (e.g. "a sample size of 30 has become widely accepted). This pattern is not unique to the SSJ paper. Wright and Armstrong [-@wright_ombudsman_2008] found that 98% of papers citing a particular procedure for testing and controlling for non-response bias also did so improperly, and failed to follow the recommendations accurately. Whether this is a broader phenomenon extending to methodological papers in general is unclear, but it suggests that citations to such papers may warrant extra attention.
+
+The survey of researchers confirmed concern about miscitations and personal experience with them: around half of the respondents had encountered miscitations of their own work at least once. Respondents were moderately willing to submit miscitation reports to a public database, though qualitative analysis of open responses identified ease of use, time constraints, and moral hesitancy as the main barriers to adoption. Respondents estimated themselves as more willing to participate in the database than they expected others to be. Where around 30% of Lakens' audience reported being very willing to submit miscitations to the database, almost no-one expected others to be very willing. This discrepancy could indicate that the recruited respondents are particularly interested in research integrity problems, and that the rest of the scientific population may be less engaged with a solution like this. Nevertheless, it is not necessary for the entire scientific population to submit to the database for it to be useful. Analysis of PubPeer comments revealed that 17.1% of comments on the platform are posted by just 25 users [@ortega2022]. This suggests that a platform like this can already be effective with just a small group of enthusiastic contributors.
+
+Informed by these findings, citeguard was designed around three principles: minimum effort, constructive framing, and transparent community moderation. The reporter application enables anyone to submit a miscitation report using two DOIs, with author-submitted reports assigned higher evidentiary weight than reader submissions. The publicly available, version-controlled database accumulates reports over time and feeds directly into the checker. The checker cross-references a paper's reference list against the database and returns targeted warnings that name the error type and reproduce the stored description of the mistake. Together, these components can flag known miscitations before a paper is submitted or published.
+
+The three subquestions target different aspects of the problem. The taxonomy shows that miscitations can take multiple forms, several of which are difficult to detect even with careful reading. The survey reveals that our sample of respondents is aware of the problem of miscitations, but that action depends on overcoming several barriers. Independently, each of these findings has value and can inform future work beyond citeguard. The overarching research question asked how automated software can be used to help prevent miscitations from being published and propagated. The present work suggests that automated prevention is most feasible when approached in a community-driven knowledge-accumulation way. A checker can flag what has already been documented in the database, making known errors increasingly hard to overlook as the database grows.
+
+## Limitations
+
+### Coding study
+
+This work is limited to psychological science. The coding of miscitations was performed on papers from psychology journals, and one methodological paper in the same field. This means that the taxonomy reflects the types of errors that occur in that context. Though the tool is likely applicable to other disciplines, the taxonomy may need to be extended or adapted to capture domain-specific patterns.
+
+The PsychSci dataset was coded by a single rater. For the SSJ dataset, inter-rater reliability could be assessed because the original author was available as a second rater; for the PsychSci dataset, no such second rater was available, and confidence in those ratings is lower. This is a meaningful limitation: the taxonomy rests on coding decisions that could not be independently verified, and a different coder might have reached different conclusions in ambiguous cases. Moreover, the coder can be just as fallible as the authors of miscitations, so the ratings are in no way final ground-truth answers. Beyond the rater reliability, another fundamental limitation is that some miscitation types are inherently more subjective than others. Whether a citation qualifies as an overgeneralization or an incomplete application of recommendations depends on interpretive judgment, and others might arrive at different conclusions.
+
+Citation formatting conventions made it difficult to reach judgments in some cases. First of all, APA style requires page numbers only for direct quotations, meaning that paraphrased claims carry no such locators. Paraphrased claims are often hard to locate and verify, and in several cases required a near-complete re-reading of a cited paper to find what was being cited. Henige [-@henige2006] already noted that the absence of locators impedes the ability to verify reference contents and argues for the use of locators for both quotes and paraphrases. Nested citations presented a related problem: when multiple sources are grouped alphabetically at the end of a sentence to support a broader claim, it can be very difficult to determine which source corresponds to which part of the argument. Both issues have direct implications for determining whether a miscitation has occurred, and both further reduced the confidence and clarity of coding decisions in the present study. Placing citations directly after the claim they support rather than at the end of a sentence, and adding page numbers to all references rather than only direct quotations, would reduce this ambiguity. This reduced ambiguity would make citation verification easier, both for human coders and future automated tools.
+
+### Survey
+
+The two participant samples may differ in a consequential way. While the email sample is composed of a representative cross-section of recently published social science researchers, the Lakens audience was recruited through the social media channels of an outspoken advocate for best research practices and methodological rigor, risking predisposition towards concern about miscitation and openness to metascientific tools. Admittedly, a similar bias is expected in the e-mail sample. Since the response rate was around 3% (488 delivered e-mails), we may well have recruited only those researchers that are already concerned about miscitations, missing out on the opinions of the less concerned non-respondents.
+
+Since both samples likely skew towards enthusiastic researchers already invested in citation integrity, the willingness estimates reported here cannot be interpreted as a representative figure. Whether there is sufficient interest among the broader research population to sustain this community-driven database remains an open question. Tools of this kind depend on contributors to become useful so a study targeting a more representative sample would be valuable to assess whether adoption at large scale is realistic.
+
+### Software
+
+A more fundamental limitation of citeguard is that it can only flag and warn for miscitations that are already known. The database-matching approach means that a completely novel citation might not be prevented if it does not match any existing mistake. Nonetheless, a warning of a frequently miscited paper might prompt the author or reviewer to carefully re-read the citation to ensure its accuracy, even if it does not match any of the reported mistakes. The tool should be understood as a mechanism for preventing the propagation of known errors rather than as a comprehensive miscitation detector for the time being. This also means that the database has to grow over time to become more useful; its effectiveness in early stages of adoption will be limited by the small number of reports in the database.
+
+The checker currently cannot make inferences about the correctness of a citation. Assessing whether a citing claim accurately represents the source requires natural language processing that goes beyond the current database-matching approach. An experimental verification step has been prototyped but not yet validated or exposed in the interface.
+
+The adoption of citeguard presents a cold-start problem: the database needs a large number of reports before the checker becomes useful enough to encourage contribution. To address this, the database is seeded with the cases identified in this study, but this initial batch is insufficient to make the tool practically useful. Reaching a sufficient coverage will require sustained contributions from multiple researchers before citeguard can serve as a safeguard against citation errors.
+
+## Future directions
+
+Several extensions to this research would meaningfully increase the utility of citeguard. One immediate addition would be a peer voting interface. It is architecturally supported by the current database, but not yet implemented. It would allow readers to upvote or downvote existing reports, giving community-validated submissions greater evidentiary weight over time. However, the full consequences of a peer-voting system are unknown. A voting system can potentially be abused. It might be necessary to include a moderation system, but that would require the recruitment of people which adds costs to an otherwise self-sustained system.
+
+Beyond extensions to the tool, the broader landscape of miscitations is itself changing. The SSJ dataset contained several citations that raised suspicions of AI-generated content where the attributed claim was not related to the source at all. This is consistent with the recent influx of AI-hallucinated citation mistakes in the scientific literature. Topaz et al. [-@topaz2026] found that the number of fabricated references in the biomedical literature has significantly increased in recent years, and the problem is likely to grow with wider adoption of AI writing tools. Fabricated citations (i.e. those references that point to a study that does not exist) are relatively straightforward to detect by software. However, those AI-generated citations that do refer to existing work but fail to correctly interpret it may warrant separate attention because of the rapidly increasing volume of those errors.
+
+A more ambitious direction is the LLM-based verification step already prototyped in citeguard but not yet implemented in the interface. An LLM could in principle flag semantic matches between novel citations and known miscitations in the database, moving the tool from a known-error presenter that invites you to verify the text yourself to a more full-fledged miscitation checker. This would require validation against a ground-truth dataset of verified miscitations. However, there are several reasons to be cautious about LLM use in a tool like this. It is not established that LLMs would be sufficiently accurate for this task. Semantic citation verification requires nuanced reading of both the citing claim and the cited source, and LLMs are themselves prone to errors and hallucinations that could produce false verdicts. Automated verification may also undesirably reduce engagement with original sources, as authors who know an automated check is available may read cited material less carefully. When the tool automatically renders a verdict, it implicitly takes on the obligation to be correct, shifting responsibility away from the author. It may therefore be preferable to omit LLM inferences entirely, and instead invite authors to re-read the source themselves. The full consequences of an LLM inference implementation are unknown and should be carefully considered before an implementation.
+
+Finally, the current taxonomy was developed entirely within psychological science. Extending and validating it across other disciplines would broaden the tool's applicability and test whether the ten types identified here are sufficient, or whether domain-specific additions are needed.
+
+## Conclusion
+
+Taken together, this work presents a step toward systematic, community-driven prevention of miscitations in the scientific literature. The coding study showed that miscitations are common and categorizable. The survey showed that researchers are aware of the problem, and broadly supportive of a database-driven solution. The result is a tool that does not claim to solve the problem of miscitations outright, but provides an infrastructure to identify, record and flag known errors over time. citeguard occupies a niche within the existing community-driven tools for scientific integrity: where Retraction Watch flags retracted papers and PubPeer enables open discussion of published work, citeguard specifically targets citation accuracy. The tools are complementary, and a citation manager integrating all three could provide more comprehensive coverage of the integrity risks a manuscript faces before publication. Finally, the citeguard checker could be incorporated into existing pre-submission manuscript checking workflows such as metacheck, lowering the barrier to adoption by allowing researchers to run it alongside other integrity checks they already perform.
+
+\newpage
+
+# Open Materials
+
+The citeguard tool is available at <https://github.com/mink-veltman/citeguard>. The miscitation database is hosted at <https://github.com/mink-veltman/citeguard-data>. The survey data and coding datasets used in this study are archived on Zenodo at <https://doi.org/10.5281/zenodo.20639519>.
+
+# Generative AI Statement
+
+Generative AI in the form of Claude Sonnet 4.6 (Anthropic) was used to assist in writing R scripts to generate figures, and in developing the citeguard tool and database. No figures, results, analyses, or other materials in this thesis were directly generated by supplying generative AI models with data.
+
+\newpage
+
+# References
+
+::: {#refs}
+:::
+
+# Email Collection
+
+```{=latex}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+```
+
+```{r}
+#| results: asis
+
+SHOW_BATCHES <- 1:6  # <- edit this to select which batches to display
+
+wide <- batch_summary |>
+  filter(batch %in% SHOW_BATCHES) |>
+  mutate(batch = sprintf("B%02d", batch)) |>
+  pivot_wider(names_from = batch, values_from = n, values_fill = 0) |>
+  mutate(
+    Discipline = discipline_map[journal],
+    Total      = rowSums(across(starts_with("B")))
+  ) |>
+  arrange(Discipline, journal) |>
+  select(Journal = journal, Discipline, starts_with("B"), Total)
+
+shown_unique <- n_total_unique
+
+latex_esc <- function(x) gsub("&", "\\\\&", as.character(x))
+
+batch_cols <- grep("^B", names(wide), value = TRUE)
+n_cols     <- 2L + length(batch_cols) + 1L
+col_spec   <- paste0("{l l ",
+                     paste(rep("r", length(batch_cols) + 1L), collapse = " "), "}")
+header     <- paste(c("Journal", "Discipline", batch_cols, "Total"), collapse = " & ")
+continued  <- sprintf("\\multicolumn{%d}{l}{\\textit{Table \\thetable{} continued}}", n_cols)
+
+data_rows <- vapply(seq_len(nrow(wide)), function(i) {
+  paste(c(latex_esc(wide$Journal[i]),
+          latex_esc(wide$Discipline[i]),
+          unlist(wide[i, batch_cols]),
+          wide$Total[i]),
+        collapse = " & ")
+}, character(1L))
+
+total_latex <- paste(
+  c("\\textbf{Total}", "",
+    colSums(wide[, batch_cols]),
+    shown_unique),
+  collapse = " & ")
+
+cat(
+  "\\begingroup\\fontsize{8}{10}\\selectfont\n",
+  sprintf("\\begin{longtable}%s\n", col_spec),
+  "\\caption{Emails collected per journal per batch}\\\\\n",
+  "\\toprule\n",
+  header, " \\\\\n",
+  "\\midrule\n",
+  "\\endfirsthead\n",
+  continued, "\\\\\n",
+  "\\toprule\n",
+  header, " \\\\\n",
+  "\\midrule\n",
+  "\\endhead\n",
+  "\\bottomrule\n",
+  "\\endlastfoot\n",
+  paste(data_rows, collapse = " \\\\\n"), " \\\\\n",
+  "\\midrule\n",
+  total_latex, " \\\\\n",
+  "\\end{longtable}\n",
+  "\\endgroup\n",
+  sep = ""
+)
+```
+
+# Survey Instrument
+
+The survey was administered online via Microsoft Forms. The introductory definition of miscitation presented to participants was: *"A miscitation occurs when a citing paper misrepresents the findings of the cited work, for example by overstating a result, omitting important nuances, or describing findings that do not exist in the original paper."*
+
+```{=latex}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+```
+
+### Section 1: Awareness and experience
+
+**Q1.** Have you ever found miscitations of your own work in published literature?\
+*Options: Yes, on multiple occasions / Yes, once / No / I have never checked for miscitations*
+
+**Q2.** How concerned are you about authors misciting your, or others' scientific works?\
+*5-point scale: 1 = Very unconcerned, 5 = Very concerned*
+
+**Q3.** Who do you think should be responsible for preventing miscitations in the scientific literature?\
+*5-point scale per stakeholder (1 = Not at all responsible, 5 = Fully responsible): Authors / Reviewers / Journal editors / Readers*
+
+### Section 2: Adoption of automated solution
+
+*The following vignette was presented before this section:*
+
+> Citation errors might be more common than most researchers assume. In medical literature, up to 25% of citations have been found to contain errors (Jergas & Baethge, 2015). In psychology specifically, Cobb et al. (2024) found that 9.5% of citations in leading journals completely misrepresent the findings of the cited work, and a further 9.3% omit important nuances, meaning roughly one in five citations may be inaccurate. The number of references per paper has been steadily increasing since 1980 (Dai et al., 2021), making it an enormous task for reviewers to cross-check every cited claim against its source. Automated tools may therefore be the most practical path toward catching miscitations before they enter the published literature.
+>
+> We propose the creation of a database where users (original authors and critical readers) can submit cases of miscitations, which will then be used to automatically warn for future miscitations. When the database is populated, the software will automatically check references to miscited papers and compare the citation to known mistakes. When implemented, this tool will be able to automatically warn for miscitations in various stages of the publication process—during writing or during peer review.
+
+**Q4.** If you found a paper that miscited your work, how willing would *you* be to submit a miscitation report to a database like this?\
+*5-point scale: 1 = Very unwilling, 5 = Very willing*
+
+**Q5.** *(Open)* Use this space if you want to explain your answer to the previous question.
+
+**Q6.** How willing do you think *other researchers* in your field would be to report to a database like this?\
+*5-point scale: 1 = Very unwilling, 5 = Very willing*
+
+**Q7.** *(Open)* Use this space if you want to explain your answer to the previous question.
+
+### Section 3: User-submitted miscitations
+
+**Q8.** We are exploring the possibility of allowing any reader, rather than only the original authors, to submit miscitations to the database. Do you think this should be allowed?\
+*Options: Yes, it should be possible / I have concerns*
+
+**Q9.** *(Open)* Please describe your concerns about letting any reader submit to the database.
+
+**Q10.** *(Open)* If we were to allow open submissions, conflicting reports about the same citation would likely occur. How do you think such conflicts should be resolved? *(Suggested approaches offered as prompts: peer voting; editorial review; author privilege.)*
+
+**Q11.** When the tool is fully developed, how supportive would you be of the following parties using it to detect miscitations?\
+*5-point scale per party (1 = Strongly oppose, 5 = Strongly support): Authors in the writing process / Reviewers reviewing a paper / Journal editors / Peers offering post-publication criticism*
+
+**Q12.** *(Open)* Please use this field to explain your choices to the previous question.
+
+### Section 4: Any other thoughts?
+
+**Q13.** *(Open)* Please use this field to share any other recommendations, concerns, feedback, or suggestions that you want us to consider in the design process.
+
+# Miscitation Cases from PsychSci
+
+## Cases from Schotter et al. Don’t Believe What You Read (Only Once): Comprehension Is Supported by Regressions During Reading (1148)
+
+The study from Schotter et al. [-@schotter2014] investigated the role of regressions (rereadings of words). They programmed a scenario in which readers were not able to regress. They found that the inability to regress negatively affected comprehension. The effect was not confined to ambiguous sentences. The results suggest that regressions contribute to the ability to understand what one has read.
+
+### 1148-6 {#case-1148-6}
+
+Andrews and Veldre [-@andrews2021, p. 125] cite: `\textcolor{miscitecolor}{`{=latex}*”Consistent with this view, Schotter, Tran, and Rayner (2014) found that comprehension accuracy was severely reduced when the opportunity for rereading was eliminated by masking earlier words in the sentence after they had been fixated. Regression rates were dramatically lower in these conditions, demonstrating that readers adapted to the unusual display, but comprehension accuracy was significantly poorer than for normally displayed sentences on which readers did not regress, indicating that simply being deprived of the opportunity to regress reduced comprehension accuracy”*`}`{=latex}. This citation is mostly accurate and describes the findings from Schotter in a detailed manner. The last sentence, however, seems to suggest that merely the opportunity to regress would lead to better comprehension without necessarily regressing. This does not follow from Schotters study. The wording as written implies that mere deprivation of the opportunity to regress reduces comprehension accuracy, regardless of whether regressions would have actually occurred. This case best fits M5 because the unclear languages makes the causal claim appear to depart from the original paper's claim. This can be categorized as M5.
+
+### 1148-10
+
+Xu et al. (2024, p. 117) [-@xu2024] cite: `\textcolor{miscitecolor}{`{=latex}*”Since Schotter et al. (2014) suggest fewer regressions as a display of poorer comprehension monitoring of the text, it is evident that the participants’ ability of comprehension monitoring, especially regulation, is in a positive relationship with their working memory capacity.”*`}`{=latex}. This is inaccurate because it inverts the interpretation of Schotter’s study. Schotter et al find evidence that fewer regressions can lead to poorer text comprehension. They do not suggest that fewer regressions are display of poor comprehension. This case fits with M5 as the sentence appears to reverse the relationship between the cause and effect.
+
+## Cases from Noreen et al. Forgiving You Is Hard, but Forgetting Seems Easy: Can Forgiveness Facilitate Forgetting? (1602)
+
+The research from Noreen et al. [-@noreen2014] presents a study exploring the relationship between forgiveness and forgetting. Participants were instructed to imagine that they were the victim in a series of incidents and then asked whether they would forgive the transgressor. More forgetting was observed for incidents that had been forgiven, following from a standard think/no-think procedure.
+
+### 1602-4 {#case-1602-4}
+
+Palazzolo [-@palazzolo2026, p. 10] writes: `\textcolor{miscitecolor}{`{=latex}*”Research shows that individuals with greater cognitive control tend to respond less aggressively (Denson et al., 2012), forgive more frequently (Pronk et al., 2010), and reduce rumination related to the offense (Noreen et al., 2014).”.*`}`{=latex} This sentence contains multiple citations that construct the claim. The claim that is made on Noreen et al could be deconstructed to *individuals with greater cognitive control tend to reduce rumination related to an offense”*. This is tangentially related to the study, but there is no measure of cognitive control, nor is there proof of reduced rumination. Noreen et al. only has evidence that forgetting happens quicker in the forgiveness condition. So, both the dependent and independent variables are distorted here, possibly to fit with the other citations in the sentence. As neither cognitive control nor reduced rumination are part of the original study this aligns with M6 and M7.
+
+### 1602-6 {#case-1602-6}
+
+Zhang and Li [-@themode, p. 2471] quote: `\textcolor{miscitecolor}{`{=latex}*”Interpersonal conflict is omnipresent in social life. It is an individual’s most common and adverse stressor (Jeter & Brannon, 2017). Forgiveness, a pro-social change process for the offender in interpersonal conflicts (Riek & Mania, 2012), is understood as contributing positively toward interpersonal relationships (Worthington, 2005) and social harmony (Noreen et al., 2014).”*`}`{=latex}
+
+The deconstructed claim here is that forgiveness contributes positively toward social harmony. However, the paper only has evidence that forgiveness can lead to quicker forgetting. The claim that it leads to social harmony is in no way an outcome variable in the cited study.
+
+### 1602-8 {#case-1602-8}
+
+Li et al. [-@li2021, 38] quote: `\textcolor{miscitecolor}{`{=latex}*”Interpersonal forgiveness is considered to play a key role in the maintenance of social relationships, the avoidance of unnecessary conflict, and the ability to move forward (Noreen et al., 2014)”*`}`{=latex}.  None of the three outcome variables here actually follow from the cited work. This is a case of total inflation of a measure to three new constructs. An extrapolation like this requires more explicit argumentation, otherwise the phrasing implies that Noreen et al. established these claims directly.
+
+## Cases from Ko et al. The Sound of Power: Conveying and Detecting Hierarchical Rank Through Voice (3009)
+
+Ko et al. [-@ko_sound_2015] ran several studies investigating the relationship between hierarchy and vocal acoustic cues. They divided participants in a low-rank and a high-rank condition. The high-rank condition participants *“were told to imagine that they had (a) a strong alternative offer, (b) valuable inside information, or (c) high status in the workplace, or (d) were asked to recall an experience in which they had power”* (Ko et al., 2015, p. 6).
+
+Significant differences on vocal cues were found in pitch, pitch variability and loudness variability across the two conditions. No significant differences were found in the remaining acoustic cues measured. To quote the original article: *“Speakers’ voices in the high-rank condition had higher pitch, F(1, 156) = 4.48, p \< .05; were more variable in loudness, F(1, 156) = 4.66, p \< .05; and were more monotone (i.e., less variable in pitch), F(1, 156) = 4.73, p \< .05, compared with speakers’ voices in the low-rank condition” (Ko et al., 2015, p. 7).*
+
+### 3009-3 {#case-3009-3}
+
+A citation from Paredes et al [-@paredes_evaluation_2019, 518]: `\textcolor{miscitecolor}{`{=latex}*”In addition, future research should evaluate to what extent the contextual conditions studied in the present study would be associated with the discrimination of other characteristics of the candidates beyond differences between experience and potential, such as differences between curricula with many vs. few merits, differences between real vs. fictitious characteristics, and differences between honest candidates vs. liars (Briñol, Petty, & Stavraki, 2012; Eisenkraft, Elfenbein, & Kopelman, 2017; Ko, Sadler, & Galinsky, 2015; Young, 2017).”*`}`{=latex} (Paredes et al., 2019, p. 518). None of these differences are related to the study in any way, and there is no apparent identifiable connection to Ko et al.'s findings.
+
+### 3009-6 {#case-3009-6}
+
+Mailhos et al. [-@mailhos_voice_2023, 2] cite a different interpretation in subsequent research on voice pitch and sociosexual behavior: To quote them: `\textcolor{miscitecolor}{`{=latex}*”In this regard, Ko et al. (2015) observed that participants who were assigned to a more powerful role in a negotiation game showed a lower and more monotone pitch than participants assigned to a less powerful role.”*`}`{=latex} The more monotone pitch follows from Ko’s work, but lower pitch is absolutely incorrect and directly inverse to what Ko et al. found. This aligns with error M1 as it directly contradicts one of the findings of the study. Therefore this mistake corresponds to code M1.
+
+### 3009-9 {#case-3009-9}
+
+Johnson and White [-@johnson_developmental_2020, 4] cite : `\textcolor{miscitecolor}{`{=latex}*”For example, differences between males and females can be observed in the acoustic–phonetic realization of their fricatives (e.g., Strand, 1999), and talkers will lower their voice when they want to be perceived as powerful (e.g., Ko, Sadler, & Galinsky, 2015)”.*`}`{=latex} First, it is unclear what they mean by “lower their voice”. Should we interpret this as lower pitch or lower loudness? Regardless, both interpretations are incorrect as pitch was found to be higher in the high-status condition, and no significant difference was found in loudness between conditions in Ko et al’s study. This mistake aligns with M1 as the interpretation of the results is directly contradictory to the source. In the other case where the authors meant decreased loudness, they would have cited an insignificant result, leading to category M3.
+
+### 3009-11 {#case-3009-11}
+
+Boon-Falleur et al. [-@boon-falleur_household_2025, 733] cite: `\textcolor{miscitecolor}{`{=latex}*”Evidence shows that this is indeed the case, with people being good at evaluating material wealth based on pictures or short videos of targets interacting with others (Kraus & Keltner, 2009; Mast & Hall, 2004), the acoustic properties of the voice of targets (Ko et al., 2015), subtle facial cues linked to emotions and health (Bjornsdottir & Rule, 2017, 2020), online behaviors such as Facebook pictures (Becker et al., 2017), and material possessions such as shoes (Gillath et al., 2012), clothing (Kraus & Mendes, 2014), and room decor (Davis, 1956).”*`}`{=latex}  (Boon-Falleur et al., 2025, p. 733).
+
+The problem with this citation is not so much the interpretation, but the claim is that people can evaluate material wealth from vocal cues, which is not what follows from the cited study. Participants were assigned to low and high-status conditions, but material wealth was never a part of this manipulation. This aligns best with M6 as they misrepresent the independent variable.
+
+## Cases from Smith et al. The moral ties that bind . . . Even to out-groups: the interactive effect of moral identity and the binding moral foundations (4450)
+
+Smith et al. [-@smith2014] present three studies investigating the effect of adhering to the binding moral foundations lead to the derogation of out-group members. For people with strong moral identity, the study suggest the answer is “no” because they are more likely to extend moral concern to people belonging to a perceived out-group. Strongly endorsing the binding moral foundations predicted support for the torture of out-group members, but not for participants who also had a strong moral identity.
+
+### 4450-9 {#case-4450-9}
+
+Chen et al. [-@chen2025, 3] cite: `\textcolor{miscitecolor}{`{=latex}*”In contrast, individuals with low moral identification are more self-centered, with a narrow scope of moral concern, making them more likely to act out in aggressive ways when they encounter frustration (Aquino et al., 2011; Smith et al., 2014).”*`}`{=latex} The first issue here is that we cannot be sure which claim is supposed to be supported by which cited paper. Notably, none of the claims in this passage are directly supported by Smith et al.’s research. The most closely related would be the claim that low moral identification individuals are more likely to act aggressively when they encounter frustration. The problem is that the moral identification is not the main independent variable of the study, but rather the interactive effect of moral identity and the binding moral foundations. The outcome variable is also inaccurate, “more likely to act out in aggressive ways when they encounter frustration” is not truthful to the actual measure of *condemnation of torture* and *support for sharing water* of the original paper. This citation aligns best with mistake M2 because neither the dependent nor independent variables correspond to the actual research, therefore the cited finding does not exist
+
+## Cases from Roper et al. Value-driven attentional capture in adolescence (5645)
+
+Roper et al. [-@roper2014] present a study where adolescents and adults were trained on a visual task to establish stimulus-reward associtations. Later, they assessed learning in an extinction task. Both age groups initially demonstrated value-driven attentional capture; however the effect persisted longer in adolescents than adults. The manipulation was a monetary reward.
+
+### 5645-2 {#case-5645-2}
+
+Pelley et al. [-@lepelley2016, 1125] cite: `\textcolor{miscitecolor}{`{=latex}”*Several subsequent studies have replicated the finding of slower responses during the test phase on high-value distractor trials compared to no-distractor trials (Anderson, Faulkner, Rilee, Yantis, & Marvel, 2013; Anderson, Laurent, & Yantis, 2013, 2014; Anderson, Leal, Hall, Yassa, & Yantis, 2014; Anderson & Yantis, 2012; Laurent, Hall, Anderson, & Yantis, 2015; Qi, Zeng, Ding, & Li, 2013; Roper, Vecera, & Vaidya, 2014; Sali, Anderson, & Yantis, 2014; Wang, Yu, & Zhou, 2013).”*`}`{=latex}\
+Again a long list of cited studies. The problem is that roper et al. found this effect **only** for adolescents and not adults. Therefore, this claim overgeneralizes the population. It is possible that the other cited studies **do** find the effects for a larger general population, but as a claim about Roper et al. alone, it is inaccurate. Because this citation suggests that Roper et al. found this effect for the general population, this gets assigned mistake code M4.
+
+### 5645-6 {#case-5645-6}
+
+El Damaty et al. [-@eldamaty2022, 11] cite: `\textcolor{miscitecolor}{`{=latex}*”Strong emotional context during social reinforcement learning has been shown to capture attention and increase the speed and accuracy of learning new associations (Roper et al., 2014; Vernetti et al., 2017)”*`}`{=latex}. This citation is problematic because it makes the jump from monetary rewards (the actual manipulated conditions) to *strong emotional context*. This inflation of the measure to a bigger construct is unjustified without additional argumentation or transparency. This can be categorized as M8
+
+## Cases from Tangney et al. Two Faces of Shame: The Roles of Shame and Guilt in Predicting Recidivism (8790)
+
+Tangney et al. [-@tangney2014] present a longitudinal study of jail inmates. They assessed shame proneness, guilt proneness, and externalization of blame shortly after incarceration. They found that guilt proneness negatively predicted re-offense in the first year after release; shame proneness did not. Shame proneness positively predicted recidivism via externalization of blame. Without externalization of blame, shame inhibited recidivism.
+
+### 8790-5 {#case-8790-5}
+
+Liu [-@liu2025, 2] cites: `\textcolor{miscitecolor}{`{=latex}*”Persistent low self-esteem leads to feelings of shame, which negatively affects psychological functioning.\[27\]”.*`}`{=latex} This citation has no identifiable connetion to the original paper. The construct "psychological function" is not defined and not measured in the original study. This can be categorized as mistake M2 because the finding does not exist in the source article at all.
+
+### 8790-11 {#case-8790-11}
+
+Zhang et al. [-@zhang2024, 25517] cite: `\textcolor{miscitecolor}{`{=latex}*”Some researchers believe that adolescent’s shame proneness is positively correlated with deviant (Maxwell et al., 2018) and aggressive behavior (Tangney et al., 2014)” and “Individuals with a high level of shame proneness have a strong need to be accepted and recognized by others (Lagattuta & Thompson, 2007); additionally, their sense of self-worth is fragile (Tangney et al., 2014).”*`}`{=latex}
+
+Aggressive behavior is not an outcome variable of Tangney et al’s study so citing it as if they found shame proneness to be positively correlated with aggressive behavior is unjustified. Even if aggressive behavior could be used interchangeably with recidivism (the actual outcome variable), Tangney et al. found that shame proneness **only** positively predicted recidivism through externalization of blame. Meaning that shame proneness without externalization of blame would not lead to more recidivism. The fragile sense of self-worth is also not a result from the Tagney et al’s work. Because of the distortion of the outcome variable, this miscitation is best categorized as M7
+
+## Cases from Storm and Stone Saving-Enhanced Memory: The Benefits of Saving on the Learning and Remembering of New Information (9285)
+
+### 9285-5 {#case-9285-5}
+
+Flanagin & Lew [-@flanagin_individual_2023, 17] cite: `\textcolor{miscitecolor}{`{=latex}*”Near-ubiquitous digital devices are increasingly used as memory aids in people’s daily lives. Rather than relying on their mental faculties to store information, people now routinely retrieve information from the web, reducing the amount of cognitive load associated with information storage and retrieval (Marsh & Rajaram, 2019; Pieschl, 2021; Sparrow et al., 2011; Storm & Stone, 2015).”*`}`{=latex} (Flanagin & Lew, 2023, p. 17). Multiple claims are made in this citation. Most closely aligned to Storm & Stone would be the claim that digital devices as memory aids reduce the amount of cognitive load associated with information storage and retrieval. This claim is probably true, but the problem is that Storm & Stone never measure cognitive load as a variable in their study.
+
+### 9285-7 {#case-9285-7}
+
+Sloman & Rabb [-@sloman_your_2016, 1452] cite: `\textcolor{miscitecolor}{`{=latex}*”Moreover, people recall less of what they have learned when they know the information is stored on a computer (Sparrow, Liu, & Wegner, 2011; Storm & Stone, 2015)*”`}`{=latex} This does not follow from Storm & Stone as they found recall of file A to be significantly larger after saving and restudying. Admittedly, they do suggest the mechanism of offloading memory of the saved file to improve learning of a new file, but the study did not prove in any way that people recall less of what they have learned when the information is saved on a computer. The claim does appear to align with Sparrow, Liu & Wegner, who do find evidence of worse recall when information is stored on a computer. So, it is unclear why Sloman & Rabb cite Storm & Stone here as their work does not contain evidence for the claim they make here, while the study from Sparrow, Liu & Wegner does. Because the finding attributed to Storm and Stone does not appear in their study, this is categorized as M2.
+
+### 9285-9 {#case-9285-9}
+
+Ackermann et al. [-@ackermann_broadband_2023, 539] cite: `\textcolor{miscitecolor}{`{=latex}*”However, internet speed need not always lead to negative effects on cognitive functioning. The use of high-speed internet potentially facilitates a more efficient allocation, and use, of cognitive resources (Clowes, 2013; Sparrow & Chatman, 2013; Storm & Stone, 2015).”*`}`{=latex} (Ackermann et al., 2023, p. 539). The claim that high-speed internet facilitates more efficient allocation of cognitive resources is a considerable leap from the original paper, which addresses neither internet speed nor cognitive resources as variables. The citation implies that the original paper investigated internet use, which it does not.
+
+# Miscitation Cases from SSJ
+
+Lakens' paper [-@lakens2022] provides a recommendation to approach justifying sample sizes. Several strategies justifications are discussed and each justification requires additional work to argue why the sample size is sufficient for the purposes of the study. A central argument of the paper is that no approach is sufficient on its own. Resource constraints, for instance are only a justification if accompanied by arguments why the resulting sample is still informative.
+
+### 4 — Godwin et al. {#ssj-godwin}
+
+Godwin et al. [-@godwin_time_2025] cite Lakens by `\textcolor{miscitecolor}{`{=latex}"following recommendations regarding transparent reporting of sample size selections"`}`{=latex} and recruited as large a sample as possible, given the financial resources and time. Additionally, they conducted a post-hoc power analysis which Lakens states not to do.
+
+### 11 — Glavac et al. {#ssj-glavac}
+
+Glavac et al. [-@glavac_slovenian_2024] cite: `\textcolor{miscitecolor}{`{=latex}"The simulations showed that power levels of the model were adequate based on the conventional cut-off criteria (Lakens, 2022)"`}`{=latex}. Lakens' paper does not provide any conventional cut-off criteria; so this Glavac et al. seem to cite a non-existent recommendation.
+
+### 16 — Dong et al. {#ssj-dong}
+
+Dong et al. [-@dong_performance_2026] cite: `\textcolor{miscitecolor}{`{=latex}*"The sample size was constrained by resources and availability of athletes, most of whom play abroad in professional or collegiate leagues (Lakens, 2022)."*`}`{=latex} . While Lakens acknowledges resource constraints as a starting point for sample size justifications, researchers are required to supplement this with a sensitivity analysis or other arguments for why the sample is still informative. This case cites Lakens as though resource constraints alone suffice as a justification.
+
+### 18 — Borelli and Pesciarelli {#ssj-borelli}
+
+Borelli and Pesciarelli [-@borelli_are_2024] cite: `\textcolor{miscitecolor}{`{=latex}*"The sample size was determined using a heuristic approach, based on typical participant numbers commonly employed in studies within this field (Lakens, 2022)."*`}`{=latex} Lakens does discuss heuristic justifications, but adds that if the sample size is based on typical numbers in the field, the researcher must verify and repeat the justification used by those studies that established the convention. Borelli and Pesciarelli do not do this.
+
+### 19 — Smith et al. {#ssj-smith}
+
+Smith et al. [-@smith_covid19_2020] cite: `\textcolor{miscitecolor}{`{=latex}*"Sample size was determined based on available funding (Lakens 2022)."*`}`{=latex} No other arguments about the adequacy of the sample size follow, making this an incomplete citation of Lakens' recommendations.
+
+### 25 — Woodford et al. {#ssj-woodford1}
+
+Woodford et al [-@woodford2025] cite: `\textcolor{miscitecolor}{`{=latex}*"Given the lack of prior research into the treatment of sleep disturbance with this population, constraints of time and financial support, the disruptions caused by COVID-19, and that by definition RGNC are rare, this N (26) is considered sufficient for research to be informative (Lakens, 2022)."*`}`{=latex} They give no justification for the sample size other than resource constraints, furthermore they seem to cite Lakens as though Lakens considers N = 26 as a sufficiently large sample.
+
+### 26 — Ibrahim et al. {#ssj-ibrahim}
+
+Ibrahim et al. [-@ibrahim2026] appear to cite Lakens in the context of evaluating machine learning classifiers and predictive model performance. Lakens' paper contains no discussion of predictive modeling, machine learning, or classifier selection. This is a complete miscitation in which the cited content does not relate to the subject matter of the source.
+
+### 27 — Ramos-Castaneda et al. {#ssj-ramos}
+
+Ramos-Castaneda at al. [-@ramos-castaneda2025] cite: `\textcolor{miscitecolor}{`{=latex}*"As the designed intervention had not been previously evaluated, the expected effect size was unknown \[...\] Therefore, the required sample size could not be calculated."*`}`{=latex} Again, this does not follow the recommendation from Lakens. A smallest effect size of interest based calculation could still have been performed.
+
+### 34 — Zhou et al. {#ssj-zhou}
+
+Zhou et al [-@zhou2025] cite: `\textcolor{miscitecolor}{`{=latex}*"For community-based dementia studies that often face limited sample sizes, we conducted post-hoc power analyses to ensure sufficient statistical sensitivity. Using G\*Power 3.1, the direct effect of subjective burden on depressive symptoms (R2_full = 0.474, R2_reduce = 0.405) yielded a partial f² of 0.131 and a power of 1. For the indirect effect (subjective burden-SOC-depressive symptoms), Monte Carlo simulations (2,000 replications, 20,000 draws per replication) indicated a power of 1.00. While high post-hoc power estimates may raise concerns, they are justifiable in the presence of large effect sizes, excellent model fit (e.g., RMSEA = 0.026, CFI = 0.998, TLI = 0.996), and stable parameter estimates (Maxwell, 2004; Lakens, 2022)."*`}`{=latex}
+
+### 37 — Hassanain et al. {#ssj-hassanain}
+
+Hassanain et al. [-@hassanain2026] cite: `\textcolor{miscitecolor}{`{=latex}"*Furthermore, a sample size of 30 has become a widely accepted guideline in many research fields, particularly in social sciences and domains that utilize questionnaire surveys (Lakens, 2022)."*`}`{=latex} Lakens makes no claim of any "widely accepted" sample size. This citation is almost exactly contradictory to the recommendations in the paper as it does not justify the sample size in any way.
+
+### 39 — Zaleskiewicz et al. {#ssj-zaleskiewicz}
+
+Zaleskiewicz et al. [-@zaleskiewicz2023] cite: `\textcolor{miscitecolor}{`{=latex}*"Since the sample size was restricted mainly by our financial resources and time (Lakens, 2022)"*`}`{=latex} but provide no additional justification. Similarly to the resource-constraint cases above this citation fails to follow Lakens' complete recommendations.
+
+### 41 — Woodford et al. {#ssj-woodford2}
+
+Woodford et al [-@woodford2025] cite: `\textcolor{miscitecolor}{`{=latex}*"Third, although this study administered a range of collateral effect measures, sleep difficulties can negatively impact a wide range of areas of functioning (e.g., childrens’ cognitive functioning, school attendance and communication, and parents’ child-related stress and perceived control) that were not measured. Fourth, although the inclusion of a range of RGNC provided an adequate sample size for formal quantitative evaluation (Lakens, 2022), RGNC are a heterogenous group of conditions with varying presentations."*`}`{=latex} They offer no justification other than resource constraints, and they appear to cite Lakens saying their sample size was adequate even though they have no arguments for this.
+
+### 45 — Ketelings et al. {#ssj-ketelings}
+
+Ketelings et al. [-@ketelings2025] cite: `\textcolor{miscitecolor}{`{=latex}*"A sample size calculation for an ANOVA repeated measures within factors was performed using G∗Power 3.1 to estimate the minimum number of participants needed in this study (Faul et al., 2007). A correlation of .4 among repeated measures was assumed for the sample size calculation (Lakens, 2022)."*`}`{=latex} From this citations it appears that the .4 correlation is attributed to Lakens' work somehow, which makes no sense. It is unclear what they cited for exactly.
+
+### 55 — Ranjan et al. {#ssj-ranjan}
+
+Ranjan et al. [-@ranjan2024]: `\textcolor{miscitecolor}{`{=latex}*"Respondents were from different places around India. The adoption of the convenience sampling method in this research was driven by its convenience and efficiency, as it proved to be more accessible and quicker in survey administration compared to alternative methods. The final number of valid sample responses collected was 401, considered apt for statistical analyses (Al-Adwan et al., 2021; Gravetter & Forzano, 2011; Lakens, 2022)."* `}`{=latex} The phrasing seems to resemble AI-generated text. Regardless, the citation is completely unfounded: There is no benchmark number of survey responses that is considered "apt for statistical analyses" according to Lakens.
+
+### 56 — Nirghin et al. {#ssj-nirghin}
+
+Nirghin et al. [-@nirghin2025] cite: `\textcolor{miscitecolor}{`{=latex}"*The study population constituted students and staff from a tertiary institution and was selected through convenience sampling. With the assistance of a statistician and using the Powering Sample Size statistical software, a sample size of 85 was calculated based on an effect size of 0.5, a significance level of 0.05 and 80% power."*`}`{=latex} This does not correctly follow Lakens' recommendations because it fails to justify the effect size.
+
+### 58 — Sun et al. {#ssj-sun}
+
+Sun et al. [-@sun2024] cite: `\textcolor{miscitecolor}{`{=latex}*"Purposive sampling was applied in the current research. This sampling methods involved deliberate selection to achieve representativeness of the settings and individuals(Patton, 2015), allowing for the effective collection of data from participants and the acquisition of valuable new information (Lakens, 2022)."*`}`{=latex} This citation is extremely general and bears little relation to the contents of Lakens; work.
+
+### 62 — Mayiwar et al. {#ssj-mayiwar}
+
+Mayiwar et al [-@mayiwar2024] cite: `\textcolor{miscitecolor}{`{=latex}*"Our sample size was constrained by limited time and financial resources as this was part of a thesis project (Lakens 2022)."*`}`{=latex} Again, this is not enough and does not follow Lakens' followup recommendations. They did not assess whether the sample size is sufficient to detect effects of interest.
+
+### 65 — Amanova et al. {#ssj-amanova}
+
+Amanova et al. [-@amanova2025] cite: `\textcolor{miscitecolor}{`{=latex}*"A sample size of 240 students and three instructors was determined to ensure the representativeness and reliability of the obtained results (Althubaiti, 2023; Hennink & Kaiser, 2022; Lakens, 2022). The sample size was calculated to provide a 95% confidence level, meaning the results would accurately reflect the actual situation within the selected population (students and instructors of the university). A sample size of 240 students and six instructors is sufficient to achieve the objectives of this study (Althubaiti, 2023; Lakens, 2022). It ensures the necessary level of reliability, accounts for variability among students from different specialisations, and allows for an objective comparison of traditional and distance learning (Hennink & Kaiser, 2022; Lakens, 2022)."*`}`{=latex} This citation seems to resemble AI-generated text again. Nevertheless, it has no substance and does not justify the sample size in any way.
+
+### 67 — Klankers et al. {#ssj-klankers}
+
+Klankers et al. [-@klankers2024] cite: `\textcolor{miscitecolor}{`{=latex}*"User studies, while essential, suffer drawbacks for systematic testing. Conducting studies requires a significant number of participants, making them time-consuming and reliant on expert knowledge \[12\]."*`}`{=latex} This does not follow from Lakens' paper. Yes, studies require a siginificant number of participants, but the point of the paper is to justify them properly, not that it is a drawback of user studies.
+
+### 70 — Elsaid et al. {#ssj-elsaid}
+
+Elsaid et al. [-@elsaid2025] cite: `\textcolor{miscitecolor}{`{=latex}*"Additionally, research on sample size heuristics indicates that a sample of approximately 30 observations strikes a balance between feasibility and statistical power, making it a widely accepted benchmark in empirical studies\[31\]."*`}`{=latex} The phrasing seems to resemble AI-generated text again. The citation attributes Lakens to a benchmark claim of a sample of 30 participants being enough, that the paper provides no basis for.
+
+### 71 — Al-Abdallah and Ababakr {#ssj-alabdallah}
+
+Al-Abdallah and Ababakr [-@al-abdallah2023] cite: `\textcolor{miscitecolor}{`{=latex}*"For such a large population, Cochran’s \[90\] formula was used to estimate the cross-sectional sample size to increase the accuracy of the representation, with the application of a 3% margin of error \[91 (Lakens)\]. Accordingly, the sample representation of this research is about 1,067."*`}`{=latex} This is not related to Lakens' paper at all and a suspected AI miscitation again.
+
+### 72 — Ahmad et al. {#ssj-ahmad}
+
+Ahmad et al. [-@ahmad2025] cite: `\textcolor{miscitecolor}{`{=latex}*"According to Lakens \[115\], a small sample size is easy to manage within lower budgetary conductions; therefore, we used a smaller sample at the present instant."*`}`{=latex} This citation is unfounded again, Lakens did not write about smaller sample sized being easy to manage. The citations appears to try to justify the sample size using resource constraints, but a possible AI distortion attributes a claim to Lakens that does not exist in the real paper.
+
+### 80 — Raphela and Tjantjies {#ssj-raphela}
+
+Raphela and Tjantjies [-@raphela2025] cite: `\textcolor{miscitecolor}{`{=latex}*"This study acknowledges the limitation of this reduced sample size and how it could have affected the conclusions of this study. However, a sample size of 100 for a quantitative study has been reported to give good statistical inferences (26, 27)."*`}`{=latex} This citation provides no justification of the sample size. The attribution of a sample size of 100 being sufficient is inconsistent with Lakens' paper, and the phrasing raises suspicions of AI-generated content again.
