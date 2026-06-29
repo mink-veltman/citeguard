@@ -476,6 +476,11 @@ server <- function(input, output, session) {
     content  = function(file) write.csv(filtered_data(), file, row.names = FALSE)
   )
 
+  output$download_all_csv <- downloadHandler(
+    filename = function() paste0("all_citations_", Sys.Date(), ".csv"),
+    content  = function(file) write.csv(raw_data(), file, row.names = FALSE)
+  )
+
   observeEvent(input$run_llm, {
     llm_status("")
     dat <- raw_data()

@@ -277,41 +277,24 @@ collect_uploaded_pdfs <- function(upload_df) {
   list(pdfs = pdf_tbl, messages = messages)
 }
 
-#' Extract citation contexts from a PDF
+#' Extract citation contexts from an already-parsed paper object
 #'
-#' Sends a PDF to a running GROBID instance, parses the resulting TEI XML via
-#' \code{metacheck::read()}, and constructs a tibble of all bibliography
-#' citations found in the paper. Each row is one citation occurrence.
+#' Constructs a tibble of all bibliography citations from a \code{paper} object
+#' as returned by \code{metacheck::read()}. Each row is one citation occurrence.
 #' The \code{expanded_text} column contains a window of surrounding sentences
 #' located using \code{metacheck::search_text()}.
 #'
-#' @param pdf_path Character. Absolute path to the local PDF file.
-#' @param pdf_name Character. Display name used as the \code{file} column in
-#'   the returned tibble (typically the original filename).
-#' @param grobid_url Character. Base URL of the GROBID REST service
-#'   (e.g. \code{"http://localhost:8070"}). The service must be reachable.
+#' @param paper A paper object as returned by \code{metacheck::read()}.
+#' @param pdf_name Character. Display name used as the \code{file} column.
 #' @param window Integer. Number of sentences before and after the citation
 #'   sentence to include in \code{expanded_text}. Default \code{10L}.
 #'
-#' @return A tibble with one row per citation occurrence. Columns:
-#'   \code{file}, \code{citation} (formatted label), \code{sentence} (the
-#'   sentence containing the citation marker), \code{expanded_text} (sentence
-#'   plus up to \code{window} sentences of surrounding context),
-#'   \code{target_sentence} (exact matched sentence from
-#'   \code{search_text()}), \code{ref_title}, \code{ref_authors},
-#'   \code{ref_author_last_names}, \code{ref_author_key},
-#'   \code{ref_lead_author}, \code{ref_title_key}, \code{ref_year},
-#'   \code{ref_doi}, \code{citation_lead_author_guess},
-#'   \code{citation_year_guess}, \code{section}, \code{div}, \code{p},
-#'   \code{s}, \code{note}. If parsing fails entirely, returns a one-row
-#'   tibble with all citation columns \code{NA} and a diagnostic message in
-#'   \code{note}.
+#' @return A tibble with one row per citation occurrence. See
+#'   \code{\link{extract_citation_contexts}} for column descriptions.
 #'
-#' @seealso \code{\link{annotate_with_db_matches}}, \code{\link{analyze_citations}}
+#' @seealso \code{\link{extract_citation_contexts}}, \code{\link{annotate_with_db_matches}}
 #' @export
-extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 10L) {
-  xml_path  <- safe_pdf2grobid(pdf_path, grobid_url = grobid_url)
-  paper     <- metacheck::read(xml_path)
+contexts_from_paper <- function(paper, pdf_name, window = 10L) {
   xrefs_all <- paper$xrefs
   bib_all   <- paper$bib
 
@@ -459,6 +442,25 @@ extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 1
     )
 }
 
+#' Extract citation contexts from a PDF
+#'
+#' Sends a PDF to a running GROBID instance, parses the resulting TEI XML via
+#' \code{metacheck::read()}, and delegates to \code{\link{contexts_from_paper}}.
+#'
+#' @param pdf_path Character. Absolute path to the local PDF file.
+#' @param pdf_name Character. Display name used as the \code{file} column.
+#' @param grobid_url Character. Base URL of the GROBID REST service.
+#' @param window Integer. Context window size. Default \code{10L}.
+#'
+#' @return See \code{\link{contexts_from_paper}}.
+#' @seealso \code{\link{contexts_from_paper}}, \code{\link{annotate_with_db_matches}}
+#' @export
+extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 10L) {
+  xml_path <- safe_pdf2grobid(pdf_path, grobid_url = grobid_url)
+  paper    <- metacheck::read(xml_path)
+  contexts_from_paper(paper, pdf_name, window)
+}
+
 #' Annotate citation contexts with known-miscitation database matches
 #'
 #' For each row in \code{citation_df} (output of
@@ -486,11 +488,13 @@ extract_citation_contexts <- function(pdf_path, pdf_name, grobid_url, window = 1
 #'   \code{db_report_count}, \code{db_report_ids},
 #'   \code{db_target_author_last_names}, \code{db_mistake_codes},
 #'   \code{db_mistake_titles}, \code{db_why_incorrect},
-#'   \code{db_quoted_text}, \code{future_verdict}. Rows are sorted with
+#'   \code{db_quoted_text}, \code{db_correct_citation}. Rows are sorted with
 #'   \code{"Yes"} matches first, then by descending score and report count.
 #'
 #' @seealso \code{\link{extract_citation_contexts}}, \code{\link{analyze_citations}}
 #' @export
+normalize_doi <- function(x) tolower(trimws(sub("^https?://doi\\.org/", "", x %||% "")))
+
 annotate_with_db_matches <- function(citation_df, known_df) {
   if (is.null(citation_df) || nrow(citation_df) == 0) return(citation_df)
 
@@ -505,7 +509,7 @@ annotate_with_db_matches <- function(citation_df, known_df) {
                db_target_author_last_names = NA_character_,
                db_mistake_codes            = NA_character_,
                db_mistake_titles           = NA_character_,
-               future_verdict              = "Not implemented"
+               db_correct_citation         = NA_character_
              ))
   }
 
@@ -516,72 +520,85 @@ annotate_with_db_matches <- function(citation_df, known_df) {
     ref_names <- unlist(strsplit(row$ref_author_last_names %||% "", ";\\s*"))
     ref_names <- ref_names[nzchar(ref_names)]
 
-    # Composite score per candidate database entry:
-    #   Exact author-key match : +6  (strongest single signal)
-    #   Fuzzy author overlap   : +2 per matched name (up to 3)
-    #   Lead-author match      : +2
-    #   In-text lead-author    : +1 (heuristic extraction, so weighted lower)
-    #   Year exact             : +2 / year off-by-one: +1
-    #   Title token overlap    : +2 for ≥2 tokens, +1 for 1 token
-    # Threshold: score ≥ 5 triggers a "Yes" flag.
+    # Score each candidate for ranking only — not used as a flag threshold.
     candidates <- known_df |>
       dplyr::rowwise() |>
       dplyr::mutate(
         target_names_vec  = list(unlist(strsplit(target_author_last_names %||% "", ";\\s*"))),
+        exact_key_match   = !is.na(row$ref_author_key) && !is.na(target_author_key) &&
+                              row$ref_author_key == target_author_key,
         fuzzy_overlap     = fuzzy_author_overlap(ref_names, target_names_vec[[1]], max_compare = 3),
-        lead_author_match = ifelse(
-          !is.na(row$ref_lead_author) && !is.na(target_lead_author) &&
-            author_name_distance_ok(row$ref_lead_author, target_lead_author),
-          1L, 0L
-        ),
-        intext_lead_match = ifelse(
-          !is.na(row$citation_lead_author_guess) && !is.na(target_lead_author) &&
-            author_name_distance_ok(row$citation_lead_author_guess, target_lead_author),
-          1L, 0L
-        ),
-        year_score   = year_close_score(row$ref_year, target_publication_year) +
-          year_close_score(row$citation_year_guess, target_publication_year),
-        title_overlap = count_title_overlap(row$ref_title_key, target_title_key),
-        score =
-          ifelse(!is.na(row$ref_author_key) && !is.na(target_author_key) && row$ref_author_key == target_author_key, 6L, 0L) +
-          fuzzy_overlap * 2L +
-          lead_author_match * 2L +
-          intext_lead_match * 1L +
-          year_score +
-          ifelse(title_overlap >= 2, 2L, ifelse(title_overlap == 1, 1L, 0L))
+        lead_author_match = (!is.na(row$ref_lead_author) && !is.na(target_lead_author) &&
+                               author_name_distance_ok(row$ref_lead_author, target_lead_author)) ||
+                            (!is.na(row$citation_lead_author_guess) && !is.na(target_lead_author) &&
+                               author_name_distance_ok(row$citation_lead_author_guess, target_lead_author)),
+        year_score        = max(year_close_score(row$ref_year, target_publication_year),
+                                year_close_score(row$citation_year_guess, target_publication_year)),
+        title_overlap     = count_title_overlap(row$ref_title_key, target_title_key),
+        score             = as.integer(exact_key_match) * 3L +
+                            fuzzy_overlap +
+                            as.integer(lead_author_match) +
+                            year_score +
+                            pmin(title_overlap, 2L)
       ) |>
       dplyr::ungroup() |>
       dplyr::arrange(dplyr::desc(score), dplyr::desc(report_count))
 
-    best  <- candidates[1, , drop = FALSE]
-    score <- if (nrow(best) == 0 || is.na(best$score)) 0L else as.integer(best$score)
+    best <- candidates[1, , drop = FALSE]
 
-    reason_bits <- c()
-    if (!is.na(best$fuzzy_overlap)     && best$fuzzy_overlap >= 2)     reason_bits <- c(reason_bits, paste0("author overlap=", best$fuzzy_overlap))
-    if (!is.na(best$lead_author_match) && best$lead_author_match == 1) reason_bits <- c(reason_bits, "lead author")
-    if (!is.na(best$intext_lead_match) && best$intext_lead_match == 1) reason_bits <- c(reason_bits, "in-text author")
-    if (!is.na(best$year_score)        && best$year_score >= 2)        reason_bits <- c(reason_bits, "year")
-    if (!is.na(best$title_overlap)     && best$title_overlap >= 1)     reason_bits <- c(reason_bits, "title")
+    # Flag decision:
+    #   author_match  : exact key match OR ≥2 fuzzy name overlaps
+    #   lead_confirmed: lead author matches AND both year AND title agree independently
+    #                   (handles cases where GROBID only linked the in-text lead author,
+    #                    not the full reference list entry — requires all 3 signals to
+    #                    avoid false positives from common single-author surnames)
+    #   year_positive : year is within 1 of the target
+    #   title_positive: ≥1 title token shared with the target
+    # A veto fires only when a signal is resolvable on both sides and contradicts.
+    author_match   <- isTRUE(best$exact_key_match) || isTRUE(best$fuzzy_overlap >= 2)
+    year_positive  <- isTRUE(best$year_score > 0)
+    title_positive <- isTRUE(best$title_overlap > 0)
+    lead_confirmed <- isTRUE(best$lead_author_match) && year_positive && title_positive
+
+    year_veto <- {
+      ref_year_known    <- (!is.na(row$ref_year)              && nzchar(row$ref_year)) ||
+                           (!is.na(row$citation_year_guess)   && nzchar(row$citation_year_guess))
+      target_year_known <- !is.na(best$target_publication_year) && nzchar(best$target_publication_year)
+      ref_year_known && target_year_known && !year_positive
+    }
+    title_veto <- {
+      ref_title_known    <- !is.na(row$ref_title_key)       && nzchar(row$ref_title_key)
+      target_title_known <- !is.na(best$target_title_key)   && nzchar(best$target_title_key)
+      ref_title_known && target_title_known && !title_positive
+    }
+
+    flagged <- (author_match || lead_confirmed) &&
+               (year_positive || title_positive) &&
+               !year_veto && !title_veto
+
+    reason_bits <- character(0)
+    if (isTRUE(best$exact_key_match))         reason_bits <- c(reason_bits, "author key")
+    else if (isTRUE(best$fuzzy_overlap >= 2)) reason_bits <- c(reason_bits, paste0("fuzzy overlap=", best$fuzzy_overlap))
+    else if (lead_confirmed)                  reason_bits <- c(reason_bits, "lead author+year+title")
+    if (isTRUE(best$lead_author_match))       reason_bits <- c(reason_bits, "lead author")
+    if (year_positive)                        reason_bits <- c(reason_bits, "year")
+    if (title_positive)                       reason_bits <- c(reason_bits, "title")
+
+    match_score <- if (nrow(best) == 0 || is.na(best$score)) 0L else as.integer(best$score)
 
     out_rows[[i]] <- row |>
       dplyr::mutate(
-        # The extra title guard prevents flagging strong author+year matches when
-        # both title keys are non-NA and share zero tokens, i.e. when the title
-        # actively contradicts the database entry.
-        db_known_miscited_paper = ifelse(
-          score >= 5 & (is.na(best$target_title_key) | best$title_overlap >= 1),
-          "Yes", "No"
-        ),
-        db_match_score              = score,
+        db_known_miscited_paper     = if (flagged) "Yes" else "No",
+        db_match_score              = match_score,
         db_match_reason             = if (length(reason_bits)) paste(reason_bits, collapse = " + ") else NA_character_,
-        db_report_count             = ifelse(score >= 5, best$report_count, 0L),
-        db_report_ids               = ifelse(score >= 5, best$report_ids %||% NA_character_, NA_character_),
-        db_target_author_last_names = ifelse(score >= 5, best$target_author_last_names, NA_character_),
-        db_mistake_codes            = ifelse(score >= 5, best$mistake_codes, NA_character_),
-        db_mistake_titles           = ifelse(score >= 5, best$mistake_titles, NA_character_),
-        db_why_incorrect            = ifelse(score >= 5, best$why_incorrect %||% NA_character_, NA_character_),
-        db_quoted_text              = ifelse(score >= 5, best$quoted_or_paraphrased_text %||% NA_character_, NA_character_),
-        future_verdict              = "Not implemented"
+        db_report_count             = if (flagged) best$report_count else 0L,
+        db_report_ids               = if (flagged) best$report_ids %||% NA_character_ else NA_character_,
+        db_target_author_last_names = if (flagged) best$target_author_last_names else NA_character_,
+        db_mistake_codes            = if (flagged) best$mistake_codes else NA_character_,
+        db_mistake_titles           = if (flagged) best$mistake_titles else NA_character_,
+        db_why_incorrect            = if (flagged) best$why_incorrect %||% NA_character_ else NA_character_,
+        db_quoted_text              = if (flagged) best$quoted_or_paraphrased_text %||% NA_character_ else NA_character_,
+        db_correct_citation         = if (flagged) best$correct_citation %||% NA_character_ else NA_character_
       )
   }
 

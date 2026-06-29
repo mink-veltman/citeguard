@@ -124,7 +124,12 @@ ui <- fluidPage(
         )
       ),
       div(id = "results_area", style = "display:none",
-        div(class = "results-summary", textOutput("results_summary")),
+        div(style = "display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px",
+          div(class = "results-summary", textOutput("results_summary")),
+          downloadLink("download_all_csv",
+                       style = "font-size:0.78em; color:#bbb;",
+                       "download all extracted citations")
+        ),
         uiOutput("results_cards")
       )
     )
