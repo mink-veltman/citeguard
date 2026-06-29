@@ -7,7 +7,8 @@ server <- function(input, output, session) {
   llm_cancel     <- reactiveVal(FALSE)
   raw_data       <- reactiveVal(tibble::tibble())
   live_log       <- reactiveVal(character())
-  known_tbl_open <- reactiveVal(FALSE)
+  known_tbl_open    <- reactiveVal(FALSE)
+  taxonomy_tbl_open <- reactiveVal(FALSE)
 
   stats <- reactiveValues(uploaded = 0, pdfs = 0, processed = 0, success = 0, fail = 0)
 
@@ -25,6 +26,20 @@ server <- function(input, output, session) {
 
   observeEvent(input$toggle_known_tbl, {
     known_tbl_open(!isTRUE(known_tbl_open()))
+  })
+
+  observe({
+    if (isTRUE(taxonomy_tbl_open())) {
+      shinyjs::show("taxonomy_tbl_body")
+      updateActionLink(session, "toggle_taxonomy_tbl", label = "Hide")
+    } else {
+      shinyjs::hide("taxonomy_tbl_body")
+      updateActionLink(session, "toggle_taxonomy_tbl", label = "Show")
+    }
+  })
+
+  observeEvent(input$toggle_taxonomy_tbl, {
+    taxonomy_tbl_open(!isTRUE(taxonomy_tbl_open()))
   })
 
   known_miscited_df <- reactive({
@@ -226,153 +241,234 @@ server <- function(input, output, session) {
     raw_data(combined)
     append_log("Processing finished")
     process_status(paste(status_messages, collapse = "\n"))
+
+    shinyjs::hide("empty_state")
+    shinyjs::show("results_area")
   })
 
   filtered_data <- reactive({
     dat <- raw_data()
     if (nrow(dat) == 0) return(dat)
 
-    if (nzchar(trimws(input$citation_filter))) {
-      dat <- dat |>
-        dplyr::filter(stringr::str_detect(
-          dplyr::coalesce(citation, ""),
-          stringr::regex(trimws(input$citation_filter), ignore_case = TRUE)
-        ))
-    }
-
-    if (nzchar(trimws(input$author_filter))) {
-      dat <- dat |>
-        dplyr::filter(
-          stringr::str_detect(dplyr::coalesce(ref_authors, ""),            stringr::regex(trimws(input$author_filter), ignore_case = TRUE)) |
-          stringr::str_detect(dplyr::coalesce(ref_author_last_names, ""), stringr::regex(trimws(input$author_filter), ignore_case = TRUE))
-        )
-    }
-
-    if (isTRUE(input$only_known_miscited)) {
+    if ("db_known_miscited_paper" %in% names(dat)) {
       dat <- dat |> dplyr::filter(db_known_miscited_paper == "Yes")
     }
 
     dat
   })
 
-  output$stat_uploaded     <- renderText(stats$uploaded)
-  output$stat_pdfs         <- renderText(stats$pdfs)
-  output$stat_processed    <- renderText(paste0(stats$processed, "/", stats$pdfs))
-  output$stat_success_fail <- renderText(paste0(stats$success, " / ", stats$fail))
-  output$live_log          <- renderText(paste(live_log(), collapse = "\n"))
-  output$diagnostic_text   <- renderText(diagnostics())
-  output$status_text       <- renderText(process_status())
+  output$process_msg <- renderText({
+    s <- process_status()
+    if (s == "No processing run yet.") return("")
+    if (startsWith(s, "Processing started") || startsWith(s, "Checking GROBID")) return("Analyzing…")
+    n_flagged <- sum(!is.na(raw_data()$db_known_miscited_paper) &
+                     raw_data()$db_known_miscited_paper == "Yes", na.rm = TRUE)
+    n_total   <- nrow(raw_data())
+    if (n_total == 0) return("No citations extracted.")
+    paste0("Checked ", n_total, " citation", if (n_total != 1) "s" else "", ".")
+  })
 
-  output$results_table <- DT::renderDT({
-    dat <- filtered_data()
+  output$results_summary <- renderText({
+    n_flagged <- nrow(filtered_data())
+    n_total   <- nrow(raw_data())
+    if (n_total == 0) return("")
+    if (n_flagged == 0)
+      return(paste0("No known miscitations found across ", n_total,
+                    " citation", if (n_total != 1) "s" else "", "."))
+    paste0("Found ", n_flagged, " citation", if (n_flagged != 1) "s" else "",
+           " to papers with known miscitations (out of ", n_total, " total).")
+  })
 
-    if ("target_sentence" %in% names(dat) && "expanded_text" %in% names(dat)) {
-      dat$expanded_text <- mapply(function(et, ts) {
-        et     <- trimws(dplyr::coalesce(as.character(et), ""))
-        ts     <- trimws(dplyr::coalesce(as.character(ts), ""))
-        et_html <- htmltools::htmlEscape(et)
-        ts_html <- trimws(htmltools::htmlEscape(ts))
+  output$results_cards <- renderUI({
+    dat     <- filtered_data()
+    full_db <- reports_db_rv()
 
-        if (!nzchar(ts_html)) return(et_html)
+    if (nrow(dat) == 0) return(NULL)
 
-        et_marked <- if (nzchar(et_html) && grepl(ts_html, et_html, fixed = TRUE)) {
-          sub(ts_html, paste0("<mark>", ts_html, "</mark>"), et_html, fixed = TRUE)
-        } else et_html
+    make_code_badge <- function(cd, tt) {
+      paste0(
+        "<span style='background:#c0392b;color:#fff;border-radius:3px;padding:1px 5px;",
+        "font-size:0.78em;font-weight:bold;margin-right:3px'>",
+        htmltools::htmlEscape(cd), "</span>",
+        if (nzchar(tt)) paste0(
+          "<span style='color:#555;font-size:0.83em;margin-right:8px'>",
+          htmltools::htmlEscape(tt), "</span>"
+        ) else ""
+      )
+    }
 
+    cards_html <- paste(vapply(seq_len(nrow(dat)), function(i) {
+      title_str   <- htmltools::htmlEscape(trimws(dplyr::coalesce(as.character(dat$ref_title[i]),   "")))
+      authors_str <- htmltools::htmlEscape(trimws(dplyr::coalesce(as.character(dat$ref_authors[i]), "")))
+      year_str    <- htmltools::htmlEscape(trimws(dplyr::coalesce(as.character(dat$ref_year[i]),    "")))
+      file_str    <- htmltools::htmlEscape(trimws(dplyr::coalesce(as.character(dat$file[i]),        "")))
+      fallback    <- htmltools::htmlEscape(trimws(dplyr::coalesce(as.character(dat$citation[i]),    "")))
+
+      display_title <- if (nzchar(title_str)) title_str else fallback
+      meta_parts    <- c(if (nzchar(authors_str)) authors_str else NULL,
+                         if (nzchar(year_str))    year_str    else NULL)
+      display_meta  <- paste(meta_parts, collapse = " · ")
+
+      # highlighted in-text quote
+      et      <- trimws(dplyr::coalesce(as.character(dat$expanded_text[i]), ""))
+      ts      <- if ("target_sentence" %in% names(dat))
+        trimws(dplyr::coalesce(as.character(dat$target_sentence[i]), "")) else ""
+      et_html <- htmltools::htmlEscape(et)
+      ts_html <- trimws(htmltools::htmlEscape(ts))
+
+      quote_html <- if (!nzchar(et_html) && !nzchar(ts_html)) {
+        ""
+      } else if (!nzchar(ts_html)) {
+        paste0("<div class='cg-quote'>", et_html, "</div>")
+      } else {
         marked_ts <- paste0("<mark>", ts_html, "</mark>")
-
         if (!nzchar(et_html) || et_html == ts_html) {
-          marked_ts
+          paste0("<div class='cg-quote'>", marked_ts, "</div>")
         } else {
+          et_marked <- if (grepl(ts_html, et_html, fixed = TRUE))
+            sub(ts_html, paste0("<mark>", ts_html, "</mark>"), et_html, fixed = TRUE)
+          else et_html
           paste0(
-            marked_ts,
-            "<details><summary style='color:#888;font-size:0.82em;cursor:pointer;padding-top:3px'>&#9660;&nbsp;context</summary>",
-            "<div style='margin-top:4px;color:#444'>", et_marked, "</div>",
-            "</details>"
+            "<div class='cg-quote'>", marked_ts,
+            "<details><summary style='color:#888;font-size:0.82em;cursor:pointer;padding-top:3px'>",
+            "&#9660;&nbsp;full context</summary>",
+            "<div style='margin-top:4px;color:#444;font-style:normal'>", et_marked, "</div>",
+            "</details></div>"
           )
         }
-      }, dat$expanded_text, dat$target_sentence, SIMPLIFY = TRUE, USE.NAMES = FALSE)
-    }
+      }
 
-    if ("db_known_miscited_paper" %in% names(dat)) {
-      is_flagged <- !is.na(dat$db_known_miscited_paper) & dat$db_known_miscited_paper == "Yes"
-      if ("db_match_reason" %in% names(dat))
-        dat$db_match_reason[!is_flagged] <- NA_character_
-    }
+      # collect DB records for this citation
+      n        <- as.integer(dplyr::coalesce(as.character(dat$db_report_count[i]), "0"))
+      if (is.na(n)) n <- 0L
+      rids_raw <- trimws(dplyr::coalesce(as.character(dat$db_report_ids[i]), ""))
+      rid_vec  <- if (nzchar(rids_raw) && rids_raw != "NA")
+        trimws(unlist(strsplit(rids_raw, ";"))) else character(0)
+      records  <- if (length(rid_vec) > 0 && nrow(full_db) > 0)
+        full_db[full_db$report_id %in% rid_vec, , drop = FALSE]
+      else NULL
 
-    default_visible <- c(
-      "file", "citation", "expanded_text",
-      if ("llm_verdict" %in% names(dat) && any(!is.na(dat$llm_verdict))) "llm_verdict" else NULL
-    )
-    hide_targets <- which(!(names(dat) %in% default_visible)) - 1
+      if (!is.null(records) && nrow(records) > 0) {
+        role_ord <- dplyr::case_when(
+          records$reporter_role == "Author of the cited work" ~ 1L,
+          records$reporter_role == "Co-author"                ~ 2L,
+          TRUE                                                 ~ 3L
+        )
+        has_votes  <- "vote_count" %in% names(records)
+        vote_score <- if (has_votes)
+          -suppressWarnings(as.integer(records$vote_count))
+        else rep(0L, nrow(records))
+        vote_score[is.na(vote_score)] <- 0L
+        records <- records[order(role_ord, vote_score), , drop = FALSE]
+      }
 
-    if ("llm_verdict" %in% names(dat)) {
-      has_rids     <- "db_report_ids"    %in% names(dat)
-      has_db_codes <- "db_mistake_codes" %in% names(dat)
-      dat$llm_verdict <- vapply(seq_len(nrow(dat)), function(i) {
-        v     <- format_llm_verdict_html(dat$llm_verdict[i])
-        if (!nzchar(v)) return(v)
-        raw_v <- trimws(dat$llm_verdict[i] %||% "")
-        if (grepl("^no(\\.?|\\s+known\\s+miscitation\\s+found\\.?)$", raw_v, ignore.case = TRUE))
-          return(v)
+      record_cards_html <- if (!is.null(records) && nrow(records) > 0) {
+        has_votes <- "vote_count" %in% names(records)
+        paste(vapply(seq_len(nrow(records)), function(r) {
+          rec        <- records[r, , drop = FALSE]
+          role       <- trimws(dplyr::coalesce(rec$reporter_role, ""))
+          role_color <- dplyr::case_when(
+            role == "Author of the cited work" ~ "#1a6e2e",
+            role == "Co-author"                ~ "#155a8a",
+            TRUE                               ~ "#666"
+          )
+          role_label <- dplyr::case_when(
+            role == "Author of the cited work" ~ "Author",
+            role == "Co-author"                ~ "Co-author",
+            TRUE                               ~ "Reader"
+          )
+          role_badge <- paste0(
+            "<span style='background:", role_color, ";color:#fff;border-radius:3px;",
+            "padding:1px 5px;font-size:0.75em;font-weight:bold;margin-right:5px'>",
+            role_label, "</span>"
+          )
+          vote_html <- if (has_votes) {
+            vc <- suppressWarnings(as.integer(rec$vote_count))
+            vc <- if (is.na(vc)) 0L else vc
+            paste0("<span style='float:right;font-size:0.8em;color:#888'>&#9650;&nbsp;",
+                   vc, " vote", if (vc != 1L) "s" else "", "</span>")
+          } else ""
 
-        db_codes <- if (has_db_codes) trimws(dat$db_mistake_codes[i] %||% "") else ""
-        if (is.na(db_codes)) db_codes <- ""
-        reported_line <- if (nzchar(db_codes) && db_codes != "NA") {
-          codes      <- trimws(unlist(strsplit(db_codes, ";")))
-          code_spans <- paste(vapply(codes, function(cd) {
-            paste0("<span style='background:#888;color:#fff;border-radius:3px;",
-                   "padding:1px 4px;font-size:0.78em;font-weight:bold;margin-right:2px'>",
-                   htmltools::htmlEscape(cd), "</span>")
-          }, character(1)), collapse = "")
-          paste0("<span style='color:#aaa;font-size:0.8em'>Reported as: ", code_spans, "</span>")
-        } else ""
+          codes_r  <- trimws(unlist(strsplit(dplyr::coalesce(rec$mistake_codes, ""), ";")))
+          codes_r  <- codes_r[nzchar(codes_r) & codes_r != "NA"]
+          titles_r <- mistake_table$mistake_title[match(codes_r, mistake_table$mistake_code)]
+          badges_r <- if (length(codes_r) > 0)
+            paste(vapply(seq_along(codes_r), function(j)
+              make_code_badge(trimws(codes_r[j]), if (!is.na(titles_r[j])) titles_r[j] else ""),
+              character(1)), collapse = "")
+          else ""
 
-        rids      <- if (has_rids) dat$db_report_ids[i] else NA_character_
-        case_line <- if (!is.na(rids) && nzchar(trimws(rids)) && trimws(rids) != "NA") {
-          ids      <- trimws(unlist(strsplit(rids, ";")))
-          id_spans <- paste(vapply(ids, function(id) {
-            paste0("<code style='font-size:0.78em;color:#aaa'>", htmltools::htmlEscape(trimws(id)), "</code>")
-          }, character(1)), collapse = " ")
-          paste0("<span style='color:#aaa;font-size:0.8em'>Case: ", id_spans, "</span>")
-        } else ""
+          quot <- trimws(dplyr::coalesce(rec$quoted_or_paraphrased_text, ""))
+          if (is.na(quot) || quot == "NA") quot <- ""
+          why  <- trimws(dplyr::coalesce(rec$why_incorrect, ""))
+          if (is.na(why)  || why  == "NA") why  <- ""
+          corr <- trimws(dplyr::coalesce(rec$correct_citation, ""))
+          if (is.na(corr) || corr == "NA") corr <- ""
 
-        footer <- paste(c(reported_line, case_line)[nzchar(c(reported_line, case_line))], collapse = "<br>")
-        if (nzchar(footer)) paste0(v, "<br>", footer) else v
-      }, character(1))
-    }
+          paste0(
+            "<div style='border:1px solid #ddd;border-radius:4px;padding:8px 10px;margin:6px 0;background:#fafafa'>",
+            "<div style='margin-bottom:5px'>", role_badge, vote_html,
+            if (nzchar(badges_r)) paste0("<span>", badges_r, "</span>") else "",
+            "<div style='clear:both'></div></div>",
+            if (nzchar(quot)) paste0(
+              "<div style='margin:4px 0;font-size:0.85em'><strong>Cited as:</strong> &ldquo;",
+              htmltools::htmlEscape(quot), "&rdquo;</div>"
+            ) else "",
+            if (nzchar(why)) paste0(
+              "<div style='border-left:3px solid #e67e22;padding:3px 8px;margin:4px 0;",
+              "font-size:0.85em;color:#444'><strong>Why incorrect:</strong> ",
+              htmltools::htmlEscape(why), "</div>"
+            ) else "",
+            if (nzchar(corr)) paste0(
+              "<div style='border-left:3px solid #27ae60;padding:3px 8px;margin:4px 0;",
+              "font-size:0.85em;color:#444'><strong>How to cite correctly:</strong> ",
+              htmltools::htmlEscape(corr), "</div>"
+            ) else "",
+            "</div>"
+          )
+        }, character(1)), collapse = "")
+      } else ""
 
-    html_cols   <- intersect(c("expanded_text", "llm_verdict"), names(dat))
-    escape_cols <- setdiff(seq_along(names(dat)), which(names(dat) %in% html_cols))
+      # summary-level code badges (union across all records)
+      all_codes_raw <- trimws(dplyr::coalesce(as.character(dat$db_mistake_codes[i]), ""))
+      if (is.na(all_codes_raw)) all_codes_raw <- ""
+      all_codes  <- trimws(unlist(strsplit(all_codes_raw, ";")))
+      all_codes  <- all_codes[nzchar(all_codes) & all_codes != "NA"]
+      all_titles <- mistake_table$mistake_title[match(all_codes, mistake_table$mistake_code)]
+      summary_badges <- if (length(all_codes) > 0)
+        paste(vapply(seq_along(all_codes), function(j)
+          make_code_badge(trimws(all_codes[j]), if (!is.na(all_titles[j])) all_titles[j] else ""),
+          character(1)), collapse = "")
+      else ""
 
-    col_defs <- list(
-      list(targets = which(names(dat) == "file")          - 1, width = "12%"),
-      list(targets = which(names(dat) == "citation")      - 1, width = "14%"),
-      list(targets = which(names(dat) == "expanded_text") - 1, width = "60%", className = "wide-text"),
-      list(targets = hide_targets, visible = FALSE)
-    )
-    if ("llm_verdict" %in% names(dat)) {
-      col_defs <- c(col_defs, list(
-        list(targets = which(names(dat) == "llm_verdict") - 1, width = "14%", className = "wide-text")
-      ))
-    }
+      expandable <- if (nzchar(record_cards_html)) paste0(
+        "<details><summary style='color:#555;font-size:0.83em;cursor:pointer;",
+        "padding-top:6px;font-weight:500'>&#9660;&nbsp;View ", n,
+        " known miscitation", if (n != 1L) "s" else "", "</summary>",
+        "<div style='margin-top:6px'>", record_cards_html, "</div></details>"
+      ) else ""
 
-    DT::datatable(
-      dat,
-      escape     = escape_cols,
-      extensions = c("Buttons"),
-      filter     = "top",
-      rownames   = FALSE,
-      class      = "cell-border stripe compact",
-      options    = list(
-        pageLength  = 10,
-        scrollX     = TRUE,
-        autoWidth   = FALSE,
-        dom         = "Bfrtip",
-        buttons     = list(list(extend = "colvis", text = "Show / hide columns")),
-        columnDefs  = col_defs
+      paste0(
+        "<div class='cg-card'>",
+        "<div class='cg-card-header'>",
+        "<div>",
+        "<div class='cg-paper-title'>", display_title, "</div>",
+        if (nzchar(display_meta)) paste0("<div class='cg-paper-meta'>", display_meta, "</div>") else "",
+        "</div>",
+        if (nzchar(file_str)) paste0("<span class='cg-file'>", file_str, "</span>") else "",
+        "</div>",
+        if (nzchar(quote_html)) "<div class='cg-cite-label'>Cited in your document</div>" else "",
+        quote_html,
+        "<div class='cg-warning-bar'>&#9888; Known miscited paper &mdash; ",
+        n, " report", if (n != 1L) "s" else "", " in database</div>",
+        if (nzchar(summary_badges))
+          paste0("<div style='margin:6px 0'>", summary_badges, "</div>") else "",
+        expandable,
+        "</div>"
       )
-    )
+    }, character(1)), collapse = "\n")
+
+    HTML(paste0("<div class='cg-cards'>", cards_html, "</div>"))
   })
 
   output$download_csv <- downloadHandler(
