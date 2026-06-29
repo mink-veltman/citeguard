@@ -88,31 +88,37 @@ run_llm_check <- function(df, model = "llama-3.3-70b-versatile", api_key = Sys.g
   })
 
   # Four-step chain-of-thought structure:
-  #   VARIABLE IDENTIFIED / PRESENT IN CITATION / CORRECTLY CHARACTERIZED / VERDICT
-  # Forcing the model to first name the specific variable dramatically reduces
-  # false positives from topically-related-but-not-matching citations.
+  #   CLAIM IDENTIFIED / PRESENT IN CITATION / CORRECTLY CHARACTERIZED / VERDICT
+  # Naming the specific claim first reduces false positives from topically-related
+  # but non-matching citations, and handles both empirical variables and
+  # methodological recommendations (e.g. SSJ-type papers).
   system_prompt <- paste0(
     "A paper has been reported as commonly miscited. ",
-    "Your job: decide whether a new citation misrepresents what that paper actually found.\n\n",
+    "Your job: decide whether a new citation misrepresents what that paper actually found or recommended.\n\n",
     "Steps:\n",
-    "1. IDENTIFY THE VARIABLE: From 'Prototypical wrong claim' and 'Why it is wrong', name the specific variable ",
-    "or construct that is being misrepresented (e.g. 'pitch', 'eye contact').\n",
-    "2. CHECK PRESENCE: Does the new citation explicitly mention that variable? ",
-    "If the variable is absent — even if the topic is related — stop here and do NOT flag.\n",
-    "3. CHECK ACCURACY: If the variable IS present, does the new citation correctly describe what the cited paper ",
-    "actually found? Use 'Why it is wrong' as your ground truth for what the paper really found. ",
+    "1. IDENTIFY THE CLAIM: From 'Prototypical wrong claim' and 'Why it is wrong', name the specific ",
+    "finding, variable, or methodological recommendation being misrepresented ",
+    "(e.g. 'pitch affects credibility', 'resource constraints are a complete sample-size justification'). ",
+    "Note: some papers are misrepresented because the citing paper attributes a recommendation the cited paper ",
+    "does not make — or explicitly warns against. The claim can be an implicit endorsement, not just a variable name.\n",
+    "2. CHECK PRESENCE: Does the new citation engage with this specific claim — either by stating it directly ",
+    "or by citing the paper in a context that clearly implies the claim? ",
+    "If neither the claim nor any clearly related usage is present — even if the broader topic is related — ",
+    "stop here and do NOT flag.\n",
+    "3. CHECK ACCURACY: If the claim IS present, does the new citation correctly represent what the cited paper ",
+    "actually found or recommended? Use 'Why it is wrong' as your ground truth. ",
     "Flag if the citation gets it wrong in ANY direction — not just the prototypical wrong direction.\n\n",
     "Critical rules:\n",
-    "- A citation mentioning related-but-different variables is NOT a match.\n",
+    "- A citation engaging with a related-but-different claim is NOT a match.\n",
     "- A citation that merely lists the paper among many references without making a specific claim is NOT a match.\n",
     "- When genuinely unsure, output 'Uncertain'.\n\n",
     "Always respond using EXACTLY these four lines:\n",
-    "VARIABLE IDENTIFIED: [the specific variable]\n",
-    "PRESENT IN CITATION: yes/no — [exact short quote, or 'not found']\n",
-    "CORRECTLY CHARACTERIZED: yes/no — [one sentence: what the citation claims vs. what the paper actually found]\n",
+    "CLAIM IDENTIFIED: [the specific finding/variable/recommendation]\n",
+    "PRESENT IN CITATION: yes/no — [exact short quote showing the claim, or 'not found']\n",
+    "CORRECTLY CHARACTERIZED: yes/no — [one sentence: what the citation claims vs. what the paper actually found/recommended]\n",
     "VERDICT: [your verdict line below]\n\n",
     "Verdict if flagging — one line per error:\n",
-    "  CODE (confidence): quote the exact phrase from the new citation that misrepresents the finding\n",
+    "  CODE (confidence): \"exact phrase from the new citation\" — one sentence explaining what the paper actually found/recommended instead\n",
     "  confidence = high (clear misrepresentation) / medium (likely wrong) / low (uncertain)\n\n",
     "Verdict if not flagging:\n",
     "  No known miscitation found\n\n",
@@ -177,7 +183,7 @@ run_llm_check <- function(df, model = "llama-3.3-70b-versatile", api_key = Sys.g
 
   for (ci in seq_along(texts)) {
     result_i <- tryCatch(
-      call_llm_once(texts[[ci]], system_prompt, 500L),
+      call_llm_once(texts[[ci]], system_prompt, 650L),
       error = function(e) {
         if (conditionMessage(e) == "__CANCELLED__") {
           cancelled_early <<- TRUE

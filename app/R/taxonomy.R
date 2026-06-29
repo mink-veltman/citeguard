@@ -18,26 +18,26 @@ mistake_table <- data.frame(
   mistake_title = c(
     "Direct contradiction of finding",
     "Non-existent finding",
-    "Non-significant finding",
-    "Overgeneralization of population",
-    "Misrepresentation of experimental conditions",
-    "Causal relation distorted or confused",
-    "Independent variable distortion",
-    "Dependent variable distortion",
-    "Measure-to-construct inflation",
+    "Non-significant result",
+    "Population overgeneralization",
+    "Causal distortion",
+    "Independent variable misrepresentation",
+    "Dependent variable misrepresentation",
+    "Unjustified construct inflation",
+    "Incomplete citation",
     "Non-contextualized citation"
   ),
   mistake_description = c(
-    "The findings of the cited paper are directly contradicted in the citation.",
-    "Neither the cited finding nor the measures exist in the cited paper.",
-    "A non-significant finding is cited.",
-    "The cited finding is overgeneralized to a larger population without justification.",
-    "The experimental conditions are misrepresented.",
-    "The causal claim is reversed or overstated.",
-    "The cited independent variable is distorted.",
-    "The cited dependent variable is distorted.",
-    "A measure is inflated to a broader construct without justification.",
-    "Citation relevance is not apparent."
+    "The cited claim directly contradicts or reverses the findings of the source.",
+    "The described result or claim does not appear in the source.",
+    "A statistically non-significant result is presented as meaningful.",
+    "Findings from a specific group are attributed to a broader population.",
+    "A causal relationship is reversed or made ambiguous relative to the source.",
+    "The manipulation or independent variable is incorrectly described.",
+    "The outcome variable or findings are distorted or incorrectly described.",
+    "Cited findings are generalized to a broader construct without justification.",
+    "A recommendation is cited without the required follow-through, including cases used to legitimize inadequate methodology.",
+    "Citation is too vague or general to be traced to specific content in the source."
   ),
   stringsAsFactors = FALSE
 )

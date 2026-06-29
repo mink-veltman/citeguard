@@ -213,10 +213,18 @@ server <- function(input, output, session) {
       target_publication_year    = fetched_year,
       target_title_clue          = substr(fetched_title, 1, 80),
       target_title_key           = title_key   %||% NA_character_,
-      mistake_codes              = NA_character_,
-      mistake_titles             = NA_character_,
+      mistake_codes              = {
+        codes <- input$mistake_codes %||% character(0)
+        if (length(codes) > 0) paste(codes, collapse = "; ") else NA_character_
+      },
+      mistake_titles             = {
+        codes <- input$mistake_codes %||% character(0)
+        titles <- get_mistake_titles(codes)
+        if (length(titles) > 0) paste(titles, collapse = "; ") else NA_character_
+      },
       quoted_or_paraphrased_text = as.character(input$quoted_or_paraphrased_text %||% ""),
       why_incorrect              = as.character(input$why_incorrect %||% ""),
+      correct_citation           = as.character(input$correct_citation %||% ""),
       stringsAsFactors           = FALSE
     )
 
@@ -236,6 +244,8 @@ server <- function(input, output, session) {
       updateTextInput(session,     "reporter_orcid",              value = "")
       updateTextAreaInput(session, "quoted_or_paraphrased_text",  value = "")
       updateTextAreaInput(session, "why_incorrect",               value = "")
+      updateTextAreaInput(session, "correct_citation",            value = "")
+      updateCheckboxGroupInput(session, "mistake_codes",          selected = character(0))
       crossref_meta(NULL)
       orcid_meta(NULL)
       orcid_search_results(list())
@@ -244,6 +254,13 @@ server <- function(input, output, session) {
       report_status(paste("Error:", conditionMessage(e)))
     })
   })
+
+  output$taxonomy_table <- renderTable({
+    df <- mistake_table[, c("mistake_code", "mistake_title", "mistake_description")]
+    names(df) <- c("Code", "Title", "Description")
+    df
+  }, striped = TRUE, bordered = FALSE, spacing = "s", width = "100%",
+     colnames = TRUE)
 
   output$report_status <- renderText(report_status())
 

@@ -37,4 +37,4 @@ cat("─────────────────────────
 cat(nrow(flagged), "flagged citation(s) across", dplyr::n_distinct(flagged$file), "PDF(s)\n")
 
 # Save flagged results to CSV
-write.csv(flagged, "citeguard_results.csv", row.names = FALSE)
+write.csv(flagged, "data/citeguard_results.csv", row.names = FALSE)

@@ -59,14 +59,15 @@ format:
     keep-tex: true
 ---
 
+<!-- JW: Abstract not visible in the main part of the thesis — check that it renders correctly in the PDF output -->
 
 ```{r}
 #| label: setup-paths
 #| include: false
-path_survey         <- "../data/survey_data_email.xlsx"
-path_survey_lakens  <- "../data/survey_data_lakens.xlsx"
-path_psychsci       <- "../data/psychsci_citations.xlsx"
-path_ssj            <- "../data/ssj_citations.xlsx"
+path_survey         <- "../data/form_data.xlsx"        # rename to survey_data.xlsx after review
+path_survey_lakens  <- "../data/daniel_form_data.xlsx"  # rename to survey_data_lakens.xlsx after review
+path_psychsci       <- "../data/psychsci_citations.csv"
+path_ssj            <- "../data/ssj_citations.csv"
 path_email_summary  <- "../data/email_collection_summary.csv"
 path_open_responses <- "../data/open_responses_quotes.qmd"
 ```
@@ -237,8 +238,8 @@ mean_ci_smp <- function(data, cols, labels, title) {
 }
 
 # ── Inter-rater reliability ────────────────────────────────────────────────────
-blind <- read_xlsx(path_ssj, sheet = "data")
-orig  <- read_xlsx(path_ssj, sheet = "data")
+blind <- read_csv(path_psychsci, show_col_types = FALSE)
+orig  <- read_csv(path_ssj,      show_col_types = FALSE)
 
 START_ROW <- 24
 blind_sub <- dplyr::slice(blind, START_ROW:dplyr::n())
@@ -267,13 +268,13 @@ normalize_verdict <- function(x) {
   )
 }
 
-mink_raw     <- trimws(toupper(blind_sub[["mv_verdict"]]))
-original_raw <- trimws(toupper(orig_sub[["dl_verdict"]]))
+mink_raw     <- trimws(toupper(blind_sub[["Mink's verdict"]]))
+original_raw <- trimws(toupper(orig_sub[["VERDICT"]]))
 
 comparison <- dplyr::tibble(
   excel_row    = (START_ROW:(START_ROW + nrow(blind_sub) - 1)) + 1L,
-  authors      = blind_sub$authors,
-  doi          = blind_sub$doi,
+  authors      = blind_sub$AUTHORS,
+  doi          = blind_sub$DOI,
   mink_raw     = mink_raw,
   orig_raw     = original_raw,
   mink_verdict = normalize_verdict(mink_raw),
@@ -383,6 +384,7 @@ journal_totals <- batch_summary |>
 
 # Introduction
 
+<!-- JW: The opening Bruner quote appears in blue in the PDF output — this should not be blue -->
 
 “Incidentally, a sin one more degree heinous than an incomplete reference is an inaccurate reference; the former will be caught by the editor or the printer, whereas the latter will stand in print as an annoyance to future investigators and a monument to the writer's carelessness.” [@bruner_psychological_1942, p. 68] This quote from Katherine Frost Bruner has ironically been inaccurately quoted in three subsequent editions of the APA manual [@rekdal_monuments_2014].
 
@@ -416,6 +418,9 @@ Automation is defined as the execution of a task by a machine that was previousl
 
 metacheck is an R package that is currently in development, designed to do all kinds of automated checks on papers such as the consistency and precision of p-values, reported effect sizes, or citations to retracted papers. metacheck can generate full reports of a paper running all the checks, or a specified selection of checks at once. The checks are meant to assist, but not replace human expertise. A module to verify the accuracy of citations would be a natural addition to the package. However, development of this module is not straightforward. Several things are needed for such a solution to work. First, an operational definition of miscitations is required. Categorizing the types of mistakes would help in developing software capable of recognizing them and explaining them to its users. At the same time, people may disagree on whether certain citations constitute a mistake. While large language models (LLMs) could compare the wording of a citing claim against a source document, they might not be reliable in cases where the correctness depends on a nuanced interpretation, or specific context. It may therefore be necessary to build a database of miscitations in which the views of the original author, other experts, and the broader scientific community can be combined to reach a verdict on the correctness of particular interpretations, thereby helping the software recognize similar mistakes in the future. Finally, for such a solution to have an impact, it will depend on input from researchers and adoption by journals and reviewers. This project consists of the development of a software solution comprising one research question divided in three subquestions.
 
+<!-- JW: The jump from "miscitations are a problem" to "we need a community-driven database" skips a step. Briefly explain in the introduction WHY a database is the right architecture rather than a pure LLM-based checker — this is discussed in the design section but would be informative here too -->
+
+<!-- JW: Move the main RQ up; then present each subquestion and explain it immediately rather than listing everything at the end. Also write a closing sentence before the next section -->
 
 More than 80 years ago, Bruner described inaccurate references as a monument to the writer's carelessness, a warning that was itself inaccurately reproduced across three editions of the APA manual. The fact that miscitations remain common today suggests the problem may be bigger than individual carelessness: it reflects the absence of mechanisms to verify cited claims. *The present study investigates whether software can help fill this gap, guided by the following research question.*
 
@@ -443,6 +448,7 @@ Addressing miscitations first requires a clear and consistent definition of what
 
 ## Coding procedure
 
+<!-- JW: Figure C1 (coding flowchart) is only referenced in the appendix and never mentioned in the main text — consider adding a reference to it here -->
 
 ### Part 1: *Psychological Science* papers (PsychSci)
 
@@ -503,7 +509,7 @@ knitr::include_graphics("flowchart_psychsci_coding.png")
 
 ### Part 2: Sample size justification paper (SSJ)
 
-Citations to Lakens' paper on sample size justification [@lakens2022] were analyzed for three reasons: the author had prior suspicions of miscitations of this paper, the author's expertise was available to serve as an expert rater, and methodological papers may be miscited differently than empirical works. Citing works were randomly sampled from an export of the 1000 most recent citations on Web of Science [@webofscience]. The first 20 citations were rated by DL (Daniël Lakens, professor at TU/e and author of the paper under analysis). An additional 57 citations were subsequently double-coded by both raters independently. Coding was performed in separate files to prevent raters from being influenced by each other's judgments. The coding procedure followed the same steps as the PsychSci dataset. However, because the target paper is methodological, rather than an empirical study, the evaluation criterion extended beyond verifying factual claims: citations were also assessed for whether the methodological advice given in the paper was actually applied or accurately represented in the citing work. Citations were rated as correct or incorrect, with textual explanations provided for identified miscitations.
+Citations to Lakens' paper on sample size justification [@lakens2022] were analyzed for three reasons: the author had prior suspicions of miscitations of this paper, the author's expertise was available to serve as an expert rater, and methodological papers may be miscited differently than empirical works. Citing works were randomly sampled from an export of the 1000 most recent citations on Web of Science [@webofscience]. The first 20 citations were rated by DL (Daniël Lakens, professor at TU/e and author of the paper under analysis). <!-- JW: Yellow highlight on this sentence — clarify who the two raters were (DL and MV?) since this is the first mention of a second rater in this paragraph -->An additional 57 citations were subsequently double-coded by both raters independently. Coding was performed in separate files to prevent raters from being influenced by each other's judgments. The coding procedure followed the same steps as the PsychSci dataset. However, because the target paper is methodological, rather than an empirical study, the evaluation criterion extended beyond verifying factual claims: citations were also assessed for whether the methodological advice given in the paper was actually applied or accurately represented in the citing work. Citations were rated as correct or incorrect, with textual explanations provided for identified miscitations.
 
 ## Results from coding miscitations
 
@@ -537,6 +543,11 @@ The sample size justification (SSJ) dataset differs from the PsychSci dataset as
 
 ### Taxonomy of miscitation types
 
+<!-- JW: Cross-reference "@tbl-taxonomy" did not render in the PDF — check Quarto cross-reference syntax (missing period/comma before @tbl-taxonomy?) -->
+
+<!-- JW: The coding procedure says citations were rated as "correct or incorrect" but Figure C1 in the appendix shows gradations (partially correct, assumed correct, misattributed). Reconcile this inconsistency. -->
+
+<!-- JW: The taxonomy is presented as a table but never really discussed substantively. Add a short paragraph interpreting the taxonomy: which types are most consequential? Are some harder to detect than others? How do the types relate conceptually? -->
 
 Ten miscitation types were identified across the two datasets. Table `\ref{taxonomy-types}`{=latex} presents the full taxonomy. Eight types (M1-M8) emerged from the PsychSci dataset. They describe cases where a cited claim contradicts, exaggerates, or otherwise misrepresents the source's findings. Two further types (M9-M10) specifically emerged from the SSJ dataset, concerning cases where a citation is applied incompletely or without sufficient relation to the source's actual contents. Together the ten types provide a categorization of miscitations that allows us to classify errors.
 
@@ -863,7 +874,7 @@ The checker could eventually be implemented as a module within metacheck, and is
 Each citation is matched against entries in the citeguard database. Since citations to the same source can vary through typos, version differences (e.g. preprint vs. published), or missing authors, no single field reliably identifies a match. Matching uses three explicit conditions that must be satisfied, summarized in @tbl-matching. First, the citation must have a strong author match: either an exact match on the author key (the first five normalized last names joined in order) or at least two fuzzy name overlaps across the first three authors. Second, at least one secondary signal must be present: either the publication year is within one year of the database entry, or at least one title token is shared. Title tokens are normalized, lowercase ASCII and filtered against high-frequency terms (e.g., *study*, *effects*, *research*). Either year or title can be missing, but if both are unresolvable, the citation is not flagged.
 
 | Signal | Condition | Role |
-|------------------------|------------------------|:-----------------------|
+|----|----|:---|
 | Author key | Exact match on first five normalized last names | Required (author match) |
 | Fuzzy author overlap | ≥2 matched names among first three authors (edit distance ≤1 for names \<8 characters, ≤2 for longer) | Required (author match) |
 | Year | Within one year of database entry | Corroboration |
@@ -883,6 +894,11 @@ citeguard is formed by three components. The reporter application populates the 
 
 ## Key findings
 
+<!-- JW: The discussion reads more like an abstract than a discussion — it mainly restates what was reported rather than interpreting results. Add a section synthesizing what the results mean for the broader miscitation problem and for the metacheck integration. -->
+
+<!-- JW: Revise the discussion (as discussed in last meeting). Consider addressing: Why is the SSJ miscitation rate (30%) higher than the PsychSci rate (14%)? What does the gap between self-reported willingness and estimated others' willingness imply? What can be said about the taxonomy developed? Also: the AI hallucinations section reads like a freestanding essay — embed it better with a transition, e.g. "One development that has occurred in parallel with this project, and that is directly connected to citeguard's relevance, is the rapid growth of AI-generated miscitations in the published literature." -->
+
+<!-- JW: Consider adding an explicit answer to RQ1. The three subquestions are addressed throughout the thesis but RQ1 itself ("how can automated software be used to help prevent miscitations?") is never answered directly. A concluding paragraph at the end of the discussion would round it up. -->
 
 We presented citeguard, a software solution to report and prevent miscitations in the scientific literature. The software was designed following analysis of miscitations in psychological scientific literature, and following input from target users. Analysis of citations in two datasets yielded miscitation rates of 14% (11/77) in a sample of *Psychological Science* papers and 30% (23/77) in a sample of citations to a methodological paper on sample size justification. Across both datasets, 10 distinct miscitation types were identified and formalized into a taxonomy (M1–M10), ranging from direct contradictions of findings and invented claims to citations that misuse a source to legitimize inadequate methodology.
 

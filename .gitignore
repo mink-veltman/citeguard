@@ -27,5 +27,5 @@ deploy.R
 
 # Report folder — only MTP3 output tracked
 report/*
-!report/Veltman_Mink_1627511_MTP_2026.qmd
-!report/Veltman_Mink_1627511_MTP_2026.pdf
+!report/MTP3.qmd
+!report/MTP3.pdf

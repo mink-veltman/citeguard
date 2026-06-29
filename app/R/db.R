@@ -28,7 +28,8 @@ db_cols <- c(
   "mistake_codes",
   "mistake_titles",
   "quoted_or_paraphrased_text",
-  "why_incorrect"
+  "why_incorrect",
+  "correct_citation"
 )
 
 empty_db_frame <- function() {
@@ -263,6 +264,14 @@ summarise_known_miscitations <- function(db) {
         !is.na(target_lead_author) |
         !is.na(target_title_key)
     ) |>
+    dplyr::mutate(
+      role_order = dplyr::case_when(
+        reporter_role == "Author of the cited work" ~ 1L,
+        reporter_role == "Co-author"                ~ 2L,
+        TRUE                                         ~ 3L
+      )
+    ) |>
+    dplyr::arrange(role_order) |>
     dplyr::group_by(
       target_author_key,
       target_lead_author,
@@ -280,6 +289,11 @@ summarise_known_miscitations <- function(db) {
         parts <- trimws(unlist(strsplit(paste(why_incorrect, collapse = " || "), "\\s*\\|\\|\\s*")))
         parts <- unique(parts[nzchar(parts) & parts != "NA"])
         paste(parts, collapse = " || ")
+      },
+      correct_citation = {
+        parts <- trimws(unlist(strsplit(paste(correct_citation, collapse = " || "), "\\s*\\|\\|\\s*")))
+        parts <- unique(parts[nzchar(parts) & parts != "NA"])
+        if (length(parts) == 0) NA_character_ else paste(parts, collapse = " || ")
       },
       .groups = "drop"
     ) |>

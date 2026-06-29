@@ -4,6 +4,10 @@ ui <- fluidPage(
     tags$style(HTML("
       .small-note { color:#666; font-size:0.95em; }
       .danger-box { border:1px solid #d9534f; padding:12px; border-radius:8px; background:#fff5f5; }
+      .taxonomy-table th, .taxonomy-table td { padding: 5px 8px; vertical-align: top; }
+      .taxonomy-table td:first-child { font-weight: bold; white-space: nowrap; }
+      .taxonomy-table td:nth-child(2) { font-weight: bold; }
+      .taxonomy-table td:nth-child(3) { color: #444; }
     "))
   ),
 
@@ -51,18 +55,35 @@ ui <- fluidPage(
 
       hr(),
 
+      selectizeInput(
+        "mistake_codes",
+        "Error type(s) (optional)",
+        choices  = mistake_choices,
+        multiple = TRUE,
+        options  = list(placeholder = "Select one or more error types…")
+      ),
+
+      hr(),
+
       textAreaInput(
         "quoted_or_paraphrased_text",
         "Miscited text (optional)",
         placeholder = "Paste the exact sentence(s) from the citing paper, or a paraphrase of the claim.",
-        rows = 4
+        rows = 3
       ),
 
       textAreaInput(
         "why_incorrect",
-        "Explanation *",
-        placeholder = "Explain what is wrong and what the original work actually shows.",
-        rows = 5
+        "Why is this citation wrong? *",
+        placeholder = "Explain what the citing paper claims and why that misrepresents the cited work.",
+        rows = 4
+      ),
+
+      textAreaInput(
+        "correct_citation",
+        "How should it be cited instead? (optional)",
+        placeholder = "Describe what the cited work actually found, or how it should be correctly cited.",
+        rows = 4
       ),
 
       actionButton("submit_report", "Submit report", class = "btn-primary"),
@@ -71,6 +92,12 @@ ui <- fluidPage(
 
     ),
 
-    mainPanel()
+    mainPanel(
+      h4("Error type reference"),
+      helpText(class = "small-note",
+               "Use the checkboxes on the left to select all types that apply to this miscitation."),
+      br(),
+      tableOutput("taxonomy_table")
+    )
   )
 )

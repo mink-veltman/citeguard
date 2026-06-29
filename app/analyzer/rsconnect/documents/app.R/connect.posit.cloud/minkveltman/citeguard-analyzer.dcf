@@ -1,0 +1,10 @@
+name: citeguard-analyzer
+title:
+username: minkveltman
+account: minkveltman
+server: connect.posit.cloud
+hostUrl: https://api.connect.posit.cloud/v1
+appId: 019dfc26-9085-e234-92e8-80b17e98b945
+bundleId:
+url: https://connect.posit.cloud/minkveltman/content/019dfc26-9085-e234-92e8-80b17e98b945
+version: 1

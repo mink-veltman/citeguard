@@ -1,0 +1,10 @@
+name: citeguard-reporter
+title:
+username: minkveltman
+account: minkveltman
+server: connect.posit.cloud
+hostUrl: https://api.connect.posit.cloud/v1
+appId: 019dfc26-6e58-057d-fc34-3dbff696c39c
+bundleId:
+url: https://connect.posit.cloud/minkveltman/content/019dfc26-6e58-057d-fc34-3dbff696c39c
+version: 1
